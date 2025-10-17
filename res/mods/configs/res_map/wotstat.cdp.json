@@ -1,0 +1,12 @@
+[
+  {
+    "itemID": "WOTSTAT_CHROME_DEVTOOLS_PROTOCOL_VIEW",
+    "type": "Layout",
+    "path": "coui://gui/gameface/mods/wotstat_cdp/index.html",
+    "parameters": {
+      "extension": "",
+      "entrance": "cdp",
+      "impl": "gameface"
+    }
+  }
+]
