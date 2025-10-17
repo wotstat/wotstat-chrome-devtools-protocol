@@ -77,32 +77,31 @@ export class DOMDomain extends BaseDomain {
     }
     const el = node as Element;
 
-    if (name) {
-      // Set a specific attribute
-      el.setAttribute(name, text);
-    } else {
-      // Parse the text as a series of attributes
-      const attrRegex = /([^\s=]+)(?:="([^"]*)")?/g;
-      const newAttrs: Record<string, string> = {};
-      let match;
-      while ((match = attrRegex.exec(text)) !== null) {
-        const attrName = match[1];
-        const attrValue = match[2] || "";
-        newAttrs[attrName] = attrValue;
-      }
 
+    // Parse the text as a series of attributes
+    const attrRegex = /([^\s=]+)(?:="([^"]*)")?/g;
+    const newAttrs: Record<string, string> = {};
+    let match;
+    while ((match = attrRegex.exec(text)) !== null) {
+      const attrName = match[1];
+      const attrValue = match[2] || "";
+      newAttrs[attrName] = attrValue;
+    }
+
+    if (!name) {
       // Remove attributes not in newAttrs
       for (const attr of Array.from(el.attributes)) {
         if (!(attr.name in newAttrs)) {
           el.removeAttribute(attr.name);
         }
       }
-
-      // Set new and updated attributes
-      for (const [attrName, attrValue] of Object.entries(newAttrs)) {
-        el.setAttribute(attrName, attrValue);
-      }
     }
+
+    // Set new and updated attributes
+    for (const [attrName, attrValue] of Object.entries(newAttrs)) {
+      el.setAttribute(attrName, attrValue);
+    }
+
 
     return { result: {} };
   }
@@ -219,7 +218,7 @@ export class DOMDomain extends BaseDomain {
           this.handleAttributeChange(rec);
           break;
         case "characterData":
-          if (rec.target.parentNode && this.store.isElement(rec.target.parentNode as Node)) continue;
+          if (rec.target.parentNode && this.store.isIgnored(rec.target.parentNode)) continue;
           this.handleCharacterData(rec);
           break;
       }
@@ -270,23 +269,48 @@ export class DOMDomain extends BaseDomain {
     }
   }
 
-  // TODO: add debounce
+  private attributeChangeBuffer = new Map<number, Map<string, { value?: string | null }>>();
+  private isThrottled = false;
+  private ATTRIBUTE_THROTTLE_MS = 500;
+
   private handleAttributeChange(rec: MutationRecord) {
     const el = rec.target as Element;
     const nodeId = this.store.getOrCreateNodeId(el);
     const name = rec.attributeName!;
-    if (el.hasAttribute(name)) {
-      const value = el.getAttribute(name) ?? "";
-      this.send({
-        method: "DOM.attributeModified",
-        params: { nodeId, name, value },
-      });
-    } else {
-      this.send({
-        method: "DOM.attributeRemoved",
-        params: { nodeId, name },
-      });
+    const value = el.getAttribute(name);
+
+    if (!this.attributeChangeBuffer.has(nodeId)) this.attributeChangeBuffer.set(nodeId, new Map());
+    const nodeChanges = this.attributeChangeBuffer.get(nodeId)!;
+    if (el.hasAttribute(name)) nodeChanges.set(name, { value });
+    else nodeChanges.set(name, { value: null });
+
+    if (!this.isThrottled) {
+      this.isThrottled = true;
+      setTimeout(() => {
+        this.flushAttributeChanges();
+        this.isThrottled = false;
+      }, this.ATTRIBUTE_THROTTLE_MS);
     }
+  }
+
+  private flushAttributeChanges() {
+    for (const [nodeId, attrs] of this.attributeChangeBuffer.entries()) {
+      for (const [name, { value }] of attrs.entries()) {
+        if (value === null) {
+          this.send({
+            method: "DOM.attributeRemoved",
+            params: { nodeId, name },
+          });
+        } else {
+          this.send({
+            method: "DOM.attributeModified",
+            params: { nodeId, name, value },
+          });
+        }
+      }
+    }
+
+    this.attributeChangeBuffer.clear();
   }
 
   private handleCharacterData(rec: MutationRecord) {
