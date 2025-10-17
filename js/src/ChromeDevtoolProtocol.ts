@@ -1,5 +1,6 @@
 import type BaseDomain from "./domain/BaseDomain";
 import { DOMDomain } from "./domain/Dom";
+import { OverlayDomain } from "./domain/Overlay";
 import { RuntimeDomain } from "./domain/Runtime";
 
 type Message = { id: number; method: string; params: any }
@@ -15,6 +16,7 @@ export class ChromeDevtoolProtocol {
     this.domains = {
       'Runtime': new RuntimeDomain({ sendCommand }),
       'DOM': new DOMDomain({ sendCommand }),
+      'Overlay': new OverlayDomain({ sendCommand }),
     }
   }
 

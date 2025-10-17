@@ -628,25 +628,3 @@ export class RemoteObjectSerializer {
 }
 
 export const remoteObjectSerializer = new RemoteObjectSerializer();
-
-/* -------------------- Example --------------------
-const ser = new RemoteObjectSerializer({ maxPreviewProps: 5 });
-
-const dom = document.createElement('div');
-dom.id = 'app';
-dom.className = 'container main';
-
-const obj = new Map<any, any>([
-  ["num", 42],
-  ["bad", NaN],
-  ["arr", [1,2,3]],
-  ["el", dom],
-  ["big", 123n],
-]);
-
-const proxy = new Proxy({ a: 1 }, {});
-(obj as any).proxy = proxy;
-
-const remote = ser.serialize(obj);
-console.log(remote); // CDP-style RemoteObject
---------------------------------------------------- */
