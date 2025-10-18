@@ -102,6 +102,8 @@ class CDPServer(object):
         server.handle_request()
       except Exception as e:
         logger.error("Error in requestLoop: %s" % e)
+        if not self.enabled:
+          break
   
   def viewPopulate(self, view):
     # type: (CDPView) -> None

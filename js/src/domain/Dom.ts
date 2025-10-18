@@ -28,23 +28,18 @@ export class DOMDomain extends BaseDomain {
       });
       this.observing = true;
     }
-    return { result: {} };
   }
 
   disable() {
     this.observer?.disconnect();
     this.observer = undefined;
     this.observing = false;
-    return { result: {} };
   }
 
   getDocument(params: GetDocumentParams = {}) {
     const depth = params.depth ?? 1;
-    const rootNode: ProtocolNode = this.store.serializeNode(document, {
-      depth,
-      pierce: false,
-    });
-    return { root: rootNode };
+    const root: ProtocolNode = this.store.serializeNode(document, { depth, pierce: false });
+    return { root };
   }
 
   requestChildNodes(params: RequestChildNodesParams) {
@@ -54,29 +49,24 @@ export class DOMDomain extends BaseDomain {
     const node = this.store.getNodeById(nodeId);
     if (!node) return { error: `DOM.requestChildNodes: Unknown nodeId ${nodeId}` };
 
-    const list = (node as any).childNodes as NodeListOf<ChildNode> | undefined;
     const nodes: ProtocolNode[] = [];
     const childDepth = depth === -1 ? -1 : Math.max(depth - 1, 0);
 
-    if (list && list.length) {
-      for (const child of Array.from(list)) {
-        nodes.push(this.store.serializeNode(child, { depth: childDepth, pierce: false }));
-      }
+    for (const child of node.childNodes) {
+      if (child.nodeType == Node.TEXT_NODE && child.nodeValue?.trim() === "") continue;
+      nodes.push(this.store.serializeNode(child, { depth: childDepth, pierce: false }));
     }
 
     this.emitSetChildNodes({ parentId: nodeId, nodes });
-    return { result: {} };
   }
 
   setAttributesAsText(params: { nodeId: number; text: string; name?: string }) {
     const { nodeId, text, name } = params;
     const node = this.store.getNodeById(nodeId);
     if (!node) return { error: `DOM.setAttributesAsText: Unknown nodeId ${nodeId}` };
-    if (node.nodeType !== Node.ELEMENT_NODE) {
-      return { error: `DOM.setAttributesAsText: nodeId ${nodeId} is not an element` };
-    }
-    const el = node as Element;
+    if (node.nodeType !== Node.ELEMENT_NODE) return { error: `DOM.setAttributesAsText: nodeId ${nodeId} is not an element` };
 
+    const el = node as Element;
 
     // Parse the text as a series of attributes
     const attrRegex = /([^\s=]+)(?:="([^"]*)")?/g;
@@ -208,6 +198,7 @@ export class DOMDomain extends BaseDomain {
   private handleMutations = (records: MutationRecord[]) => {
     for (const rec of records) {
       if (this.store.isIgnored(rec.target)) continue;
+      if (!this.store.isRegistered(rec.target)) continue;
 
       switch (rec.type) {
         case "childList":
@@ -218,7 +209,7 @@ export class DOMDomain extends BaseDomain {
           this.handleAttributeChange(rec);
           break;
         case "characterData":
-          if (rec.target.parentNode && this.store.isIgnored(rec.target.parentNode)) continue;
+          if (rec.target.parentNode && this.store.isIgnored(rec.target.parentNode) && !this.store.isRegistered(rec.target.parentNode)) continue;
           this.handleCharacterData(rec);
           break;
       }
@@ -249,7 +240,7 @@ export class DOMDomain extends BaseDomain {
   }
 
   private handleRemovals(rec: MutationRecord) {
-    const parent = rec.target as Node;
+    const parent = rec.target;
     const parentNodeId = this.store.getOrCreateNodeId(parent);
 
     for (const removed of Array.from(rec.removedNodes)) {

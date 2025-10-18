@@ -1,4 +1,3 @@
-/* Minimal CDP shapes we’ll emit (subset of Runtime.*) */
 type RemoteObjectType =
   | "object" | "function" | "undefined" | "string" | "number" | "boolean" | "symbol" | "bigint";
 
@@ -8,15 +7,15 @@ type RemoteObjectSubtype =
   | "arraybuffer" | "dataview";
 
 interface PropertyPreview {
-  name: string;                          // property key (stringified)
-  type: RemoteObjectType | "accessor";   // "accessor" if getter/setter
-  value?: string;                        // string preview of primitive/description
-  valuePreview?: ObjectPreview;          // nested preview for small object-ish values
+  name: string;
+  type: RemoteObjectType | "accessor";
+  value?: string;
+  valuePreview?: ObjectPreview;
   subtype?: RemoteObjectSubtype;
 }
 
 interface EntryPreview {
-  key?: PropertyPreview; // for Map entries
+  key?: PropertyPreview;
   value: PropertyPreview;
 }
 
@@ -26,44 +25,43 @@ interface ObjectPreview {
   description?: string;
   overflow: boolean;
   properties: PropertyPreview[];
-  entries?: EntryPreview[]; // for Maps/Sets
+  entries?: EntryPreview[];
 }
 
 interface RemoteObject {
   type: RemoteObjectType;
   subtype?: RemoteObjectSubtype;
   className?: string;
-  value?: any;                 // only when safely by-value (JSON-ish primitives)
-  unserializableValue?: string; // for -0, NaN, Infinity, BigInt
+  value?: any;
+  unserializableValue?: string;
   description?: string;
-  objectId?: string;           // reference id (stable within serializer)
+  objectId?: string;
   preview?: ObjectPreview;
-  // (customPreview omitted)
 }
 
 type SerializerOptions = {
-  includePreview?: boolean;  // default true
-  maxPreviewProps?: number;  // default 8
-  maxStringLength?: number;  // default 120
-  maxDescriptionLength?: number; // default 140
+  includePreview?: boolean;
+  maxPreviewProps?: number;
+  maxStringLength?: number;
+  maxDescriptionLength?: number;
 };
 
 type ExceptionDetails = { text: string; };
 
 type RuntimePropertyDescriptor = {
-  name?: string;                     // present for string keys
-  symbol?: RemoteObject;             // present for symbol keys
-  value?: RemoteObject;              // data prop only
-  writable?: boolean;                // data prop only
-  get?: RemoteObject;                // accessor only
-  set?: RemoteObject;                // accessor only
+  name?: string;
+  symbol?: RemoteObject;
+  value?: RemoteObject;
+  writable?: boolean;
+  get?: RemoteObject;
+  set?: RemoteObject;
   configurable: boolean;
   enumerable: boolean;
-  isOwn?: boolean;                   // when ownProperties === false
+  isOwn?: boolean;
 };
 
 type InternalPropertyDescriptor = {
-  name: string;                      // e.g. [[Prototype]]
+  name: string;
   value?: RemoteObject;
 };
 
@@ -80,44 +78,39 @@ type GetPropertiesResult = {
   exceptionDetails?: ExceptionDetails;
 };
 
-/**
- * RemoteObjectSerializer
- * - Produces CDP-like RemoteObject + ObjectPreview
- * - Assigns stable objectIds for non-primitive values and tracks circular refs
- * - Heuristics for DOM nodes + proxy detection (incl. revoked proxies)
- * - Safe property enumeration (avoids invoking getters)
- */
 export class RemoteObjectSerializer {
   private nextId = 1;
   private ids = new WeakMap<object, string>();
   private store = new Map<string, any>();
-  private readonly opts: Required<SerializerOptions>;
+  private readonly options: Required<SerializerOptions>;
 
   constructor(options: SerializerOptions = {}) {
-    this.opts = {
+    this.options = {
       includePreview: options.includePreview ?? true,
       maxPreviewProps: Math.max(1, options.maxPreviewProps ?? 8),
-      maxStringLength: Math.max(16, options.maxStringLength ?? 1200),
-      maxDescriptionLength: Math.max(40, options.maxDescriptionLength ?? 500),
+      maxStringLength: Math.max(16, options.maxStringLength ?? 10000),
+      maxDescriptionLength: Math.max(40, options.maxDescriptionLength ?? 10000),
     };
   }
 
-  /** Public API */
   serialize(value: any, generatePreview?: boolean): RemoteObject {
-    return this.toRemote(value, new Set(), generatePreview ?? this.opts.includePreview);
+    return this.toRemote(value, new Set(), generatePreview ?? this.options.includePreview);
   }
+
   getObjectById(objectId: string): any | undefined {
     return this.store.get(objectId);
   }
+
   releaseObject(objectId: string): boolean {
     if (this.store.has(objectId)) this.ids.delete(this.store.get(objectId));
     return this.store.delete(objectId);
   }
+
   getProperties(params: GetPropertiesParams): GetPropertiesResult {
     const {
       objectId,
       accessorPropertiesOnly = false,
-      generatePreview = this.opts.includePreview,
+      generatePreview = this.options.includePreview,
       ownProperties = true,
     } = params;
 
@@ -240,12 +233,9 @@ export class RemoteObjectSerializer {
     }
   }
 
-  // ---------------- internal helpers ----------------
-
   private toRemote(value: any, seen: Set<any>, generatePreview = false): RemoteObject {
     const t = typeof value;
 
-    // Handle primitives first
     if (value === undefined) return { type: "undefined" };
     if (value === null) return { type: "object", subtype: "null", description: "null" };
     if (t === "string") return this.primitiveString(value);
@@ -255,12 +245,11 @@ export class RemoteObjectSerializer {
     if (t === "symbol") return { type: "symbol", description: String(value) };
     if (t === "function") return this.forFunction(value, seen, generatePreview);
 
-    // Objects & everything else
     return this.forObject(value, seen);
   }
 
   private primitiveString(s: string): RemoteObject {
-    const clipped = this.clip(s, this.opts.maxStringLength);
+    const clipped = this.clip(s, this.options.maxStringLength);
     return {
       type: "string",
       value: s.length === clipped.length ? s : clipped,
@@ -276,66 +265,56 @@ export class RemoteObjectSerializer {
   }
 
   private forFunction(fn: Function, seen: Set<any>, generatePreview = false): RemoteObject {
-    const desc = this.clip(this.fnSignature(fn), this.opts.maxDescriptionLength);
-    const objectId = this.ensureId(fn);
-    const ro: RemoteObject = {
+    const desc = this.clip(this.fnSignature(fn), this.options.maxDescriptionLength);
+    const objectId = this.getOrCreateObjId(fn);
+    const res: RemoteObject = {
       type: "function",
       className: "Function",
       description: desc,
       objectId,
     };
-    if (generatePreview) {
-      ro.preview = {
-        type: "function",
-        overflow: false,
-        description: desc,
-        properties: this.safeOwnPropertyPreviews(fn, seen),
-      };
-    }
-    return ro;
+
+    if (generatePreview) res.preview = {
+      type: "function",
+      overflow: false,
+      description: desc,
+      properties: this.safeOwnPropertyPreviews(fn, seen),
+    };
+
+    return res;
   }
 
   private forObject(obj: any, seen: Set<any>): RemoteObject {
-    // Circular handling
-    if (seen.has(obj)) {
-      // already being processed higher up in the tree: ensure stable id reference
-      return {
-        type: "object",
-        description: this.objectDescription(obj),
-        objectId: this.ensureId(obj),
-      };
-    }
+    if (seen.has(obj)) return {
+      type: "object",
+      description: this.objectDescription(obj),
+      objectId: this.getOrCreateObjId(obj),
+    };
+
     seen.add(obj);
 
-    // Detect special subtypes
     const subtype = this.detectSubtype(obj);
     const type: RemoteObjectType = "object";
     const className = this.getClassName(obj);
     const description = this.objectDescription(obj, subtype, className);
-    const objectId = this.ensureId(obj);
+    const objectId = this.getOrCreateObjId(obj);
 
-    const ro: RemoteObject = { type, subtype, className, description, objectId };
+    const res: RemoteObject = { type, subtype, className, description, objectId };
 
-    // Some values can be sent by-value too (tiny, JSON-safe), but CDP usually sends reference for objects.
-    // We stick to by-reference + preview for parity with DevTools.
-    if (this.opts.includePreview) {
-      ro.preview = this.objectPreview(obj, subtype, description, seen);
+    if (this.options.includePreview) {
+      res.preview = this.objectPreview(obj, subtype, description, seen);
     }
 
-    return ro;
+    return res;
   }
-
-  // ---- subtype detection & description ----
 
   private detectSubtype(obj: any): RemoteObjectSubtype | undefined {
     try {
       if (this.isProbablyRevokedProxy(obj)) return "proxy";
-    } catch { /* ignore */ }
+    } catch { }
 
-    // DOM Node
     if (this.isDOMNode(obj)) return "node";
 
-    // Built-ins
     if (Array.isArray(obj)) return "array";
     if (obj instanceof Date) return "date";
     if (obj instanceof RegExp) return "regexp";
@@ -347,71 +326,49 @@ export class RemoteObjectSerializer {
 
     if (typeof Error !== "undefined" && obj instanceof Error) return "error";
 
-    // Typed arrays
     if (typeof ArrayBuffer !== "undefined" && ArrayBuffer.isView(obj)) return "typedarray";
 
-    // Weak collections cannot be enumerated safely
-    // (instanceof checks guarded for environments lacking them)
     try {
-      // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-      // @ts-ignore
       if (typeof WeakMap !== "undefined" && obj instanceof WeakMap) return "weakmap";
-      // @ts-ignore
       if (typeof WeakSet !== "undefined" && obj instanceof WeakSet) return "weakset";
-    } catch { /* ignore */ }
+    } catch { }
 
-    // Heuristic proxy check (non-revoked): if trapping basic meta ops throws, likely proxy.
     if (this.isProbablyProxy(obj)) return "proxy";
 
     return undefined;
   }
 
   private objectDescription(obj: any, subtype?: RemoteObjectSubtype, className?: string): string {
-    if (subtype === "node") {
-      if (className == 'Window') return 'Window';
-      return this.domNodeSummary(obj);
-    }
-    if (subtype === "array") {
-      return `${className ?? "Array"}(${(obj as any[]).length})`;
-    }
-    if (subtype === "date") {
-      return `Date (${isNaN(obj.getTime()) ? "Invalid Date" : obj.toISOString()})`;
-    }
-    if (subtype === "regexp") {
-      return String(obj);
-    }
-    if (subtype === "map") {
-      return `Map(${(obj as Map<any, any>).size})`;
-    }
-    if (subtype === "set") {
-      return `Set(${(obj as Set<any>).size})`;
-    }
+
+    if (subtype === "array") return `${className ?? "Array"}(${(obj as any[]).length})`;
+    if (subtype === "date") return `Date (${isNaN(obj.getTime()) ? "Invalid Date" : obj.toISOString()})`;
+    if (subtype === "regexp") return String(obj);
+    if (subtype === "map") return `Map(${(obj as Map<any, any>).size})`;
+    if (subtype === "set") return `Set(${(obj as Set<any>).size})`;
     if (subtype === "weakmap") return "WeakMap";
     if (subtype === "weakset") return "WeakSet";
     if (subtype === "promise") return "Promise";
     if (subtype === "error") return `${obj.name}: ${obj.message ?? ""}`.trim();
+    if (subtype === "arraybuffer") return `ArrayBuffer(${(obj as ArrayBuffer).byteLength} bytes)`;
+    if (subtype === "dataview") return `DataView(${(obj as DataView).byteLength} bytes)`;
+    if (subtype === "proxy") return "Proxy";
+    if (subtype === "node") {
+      if (className == 'Window') return 'Window';
+      return this.domNodeSummary(obj);
+    }
     if (subtype === "typedarray") {
       const cn = this.getClassName(obj) ?? "TypedArray";
       return `${cn}(${(obj as ArrayLike<any>).length ?? 0})`;
     }
-    if (subtype === "arraybuffer") {
-      return `ArrayBuffer(${(obj as ArrayBuffer).byteLength} bytes)`;
-    }
-    if (subtype === "dataview") {
-      return `DataView(${(obj as DataView).byteLength} bytes)`;
-    }
-    if (subtype === "proxy") return "Proxy";
 
     return className ?? this.getClassName(obj) ?? "Object";
   }
-
-  // ---- previews ----
 
   private objectPreview(obj: any, subtype: RemoteObjectSubtype | undefined, description: string, seen: Set<any>): ObjectPreview {
     const preview: ObjectPreview = {
       type: "object",
       subtype,
-      description: this.clip(description, this.opts.maxDescriptionLength),
+      description: this.clip(description, this.options.maxDescriptionLength),
       overflow: false,
       properties: [],
     };
@@ -421,7 +378,7 @@ export class RemoteObjectSerializer {
       let count = 0;
       preview.entries = [];
       for (const [k, v] of m) {
-        if (count >= this.opts.maxPreviewProps) { preview.overflow = true; break; }
+        if (count >= this.options.maxPreviewProps) { preview.overflow = true; break; }
         preview.entries.push({
           key: this.asPropertyPreview("(key)", k, seen),
           value: this.asPropertyPreview("(value)", v, seen),
@@ -436,7 +393,7 @@ export class RemoteObjectSerializer {
       let count = 0;
       preview.entries = [];
       for (const v of s) {
-        if (count >= this.opts.maxPreviewProps) { preview.overflow = true; break; }
+        if (count >= this.options.maxPreviewProps) { preview.overflow = true; break; }
         preview.entries.push({
           value: this.asPropertyPreview("(value)", v, seen),
         });
@@ -445,11 +402,10 @@ export class RemoteObjectSerializer {
       return preview;
     }
 
-    // Arrays / plain objects / typed arrays / etc.
     const keys = this.safeOwnKeys(obj);
     let shown = 0;
     for (const key of keys) {
-      if (shown >= this.opts.maxPreviewProps) { preview.overflow = true; break; }
+      if (shown >= this.options.maxPreviewProps) { preview.overflow = true; break; }
       const pprev = this.safePropertyPreview(obj, key, seen);
       preview.properties.push(pprev);
       shown++;
@@ -467,29 +423,27 @@ export class RemoteObjectSerializer {
     if (t === "boolean") return { name, type: "boolean", value: String(value) };
     if (t === "bigint") return { name, type: "bigint", value: `bigint:${String(value)}` };
     if (t === "symbol") return { name, type: "symbol", value: String(value) };
-    // object/function => small nested preview (one-liner description)
+
     const subtype = this.detectSubtype(value);
     const desc = this.objectDescription(value, subtype, this.getClassName(value));
     return {
       name,
       type: typeof value === "function" ? "function" : "object",
       subtype,
-      value: this.clip(desc, this.opts.maxDescriptionLength),
+      value: this.clip(desc, this.options.maxDescriptionLength),
     };
   }
 
   private safePropertyPreview(obj: any, key: PropertyKey, seen: Set<any>): PropertyPreview {
     let desc: PropertyDescriptor | undefined;
-    try { desc = Object.getOwnPropertyDescriptor(obj, key); } catch { /* proxies may throw */ }
+    try { desc = Object.getOwnPropertyDescriptor(obj, key); } catch { }
 
     const name = this.keyToString(key);
 
     if (!desc || ("get" in desc || "set" in desc) && (desc.get || desc.set)) {
-      // Accessor — do NOT invoke getters
       return { name, type: "accessor", value: desc ? this.accessorLabel(desc) : "accessor" };
     }
 
-    // Data property: safe to read value (should not have a getter)
     let v: any;
     try { v = desc.value; } catch { return { name, type: "accessor", value: "accessor" }; }
 
@@ -501,7 +455,7 @@ export class RemoteObjectSerializer {
     const out: PropertyPreview[] = [];
     let shown = 0;
     for (const key of keys) {
-      if (shown >= this.opts.maxPreviewProps) break;
+      if (shown >= this.options.maxPreviewProps) break;
       out.push(this.safePropertyPreview(obj, key, seen));
       shown++;
     }
@@ -511,10 +465,8 @@ export class RemoteObjectSerializer {
   private safeOwnKeys(obj: any): PropertyKey[] {
     try {
       return Reflect.ownKeys(obj).filter(k => typeof k === "string") as string[];
-    } catch {
-      // revoked proxy or trapping failure
-      return [];
-    }
+    } catch { }
+    return [];
   }
 
   private accessorLabel(d: PropertyDescriptor): string {
@@ -522,25 +474,23 @@ export class RemoteObjectSerializer {
     return gs ? `${gs} accessor` : "accessor";
   }
 
-  // ---- ids / registry ----
 
-  private ensureId(obj: object): string {
+  private getOrCreateObjId(obj: object): string {
     let id = this.ids.get(obj);
-    if (!id) {
-      id = `local:${this.nextId++}`;
-      this.ids.set(obj, id);
-      this.store.set(id, obj);
-    }
-    return id;
+    if (id) return id;
+
+    const nextId = `local:${this.nextId++}`;
+    this.ids.set(obj, nextId);
+    this.store.set(nextId, obj);
+    return nextId;
   }
 
-  // ---- environment / detection utilities ----
 
   private getClassName(obj: any): string | undefined {
     try {
       const tag = Object.prototype.toString.call(obj); // "[object X]"
       const name = tag.slice(8, -1);
-      // For DOM nodes, prefer their concrete class (HTMLDivElement, etc.)
+
       if (this.isDOMNode(obj) && obj.constructor && obj.constructor.name) return obj.constructor.name;
       return name || undefined;
     } catch {
@@ -555,7 +505,7 @@ export class RemoteObjectSerializer {
 
   private domNodeSummary(node: any): string {
     try {
-      if (node.nodeType === 1) { // ELEMENT_NODE
+      if (node.nodeType === Node.ELEMENT_NODE) { // ELEMENT_NODE
         const el = node as Element;
         const id = el.id ? `#${el.id}` : "";
         const cls = (el.className && typeof el.className === "string" && el.className.trim())
@@ -563,7 +513,7 @@ export class RemoteObjectSerializer {
           : "";
         return `<${el.tagName.toLowerCase()}${id}${cls}>`;
       }
-      if (node.nodeType === 3) return `#text "${this.clip(node.nodeValue ?? "", 20)}"`;
+      if (node.nodeType === Node.TEXT_NODE) return `#text "${this.clip(node.nodeValue ?? "", 20)}"`;
       return node.nodeName || "Node";
     } catch {
       return "Node";
@@ -571,42 +521,33 @@ export class RemoteObjectSerializer {
   }
 
   private isProbablyRevokedProxy(obj: any): boolean {
-    // Revoked proxy throws on almost any meta op
     try { Reflect.getPrototypeOf(obj); } catch { return true; }
     try { Reflect.ownKeys(obj); } catch { return true; }
     return false;
   }
 
   private isProbablyProxy(obj: any): boolean {
-    // Heuristic: if fundamental traps throw unexpectedly, or defineProperty fails oddly.
     try {
-      // benign operations that *can* be trapped
-      // getPrototypeOf and ownKeys already checked in revoked test
-      // Here try a no-op defineProperty on a fresh key then delete
       const tmp = Symbol.for("~probe~");
       Reflect.defineProperty(obj, tmp, { value: 1, configurable: true, enumerable: false, writable: true });
       Reflect.deleteProperty(obj, tmp);
       return false;
     } catch {
-      // If this throws but object otherwise acts like an object, it may be a proxy (or sealed/frozen).
-      // Distinguish from sealed/frozen:
       try { return !(Object.isSealed(obj) || Object.isFrozen(obj)); } catch { return true; }
     }
   }
 
-  // ---- formatting ----
-
   private fnSignature(fn: Function): string {
     const name = fn.name || "(anonymous)";
     let src = "";
-    try { src = Function.prototype.toString.call(fn); } catch { /* ignore */ }
+    try { src = Function.prototype.toString.call(fn); } catch { }
     const argsMatch = src.match(/\(([^)]*)\)/);
     const args = argsMatch ? argsMatch[1].trim() : "";
     return `ƒ ${name}(${args})`;
   }
 
   private stringPreview(s: string): string {
-    const clipped = this.clip(s, this.opts.maxStringLength);
+    const clipped = this.clip(s, this.options.maxStringLength);
     return s.length === clipped.length ? JSON.stringify(s) : JSON.stringify(clipped + "…");
   }
 

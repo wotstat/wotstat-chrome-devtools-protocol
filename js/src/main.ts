@@ -9,18 +9,23 @@ type Model = {
 
 const model = ModelObserver<Model>('WOTSTAT_CHROME_DEVTOOLS_PROTOCOL_VIEW');
 
-console.error("ModelObserver created", model)
-
 const cdp = new ChromeDevtoolProtocol((command) => {
   model.model?.sendCommand({ command: JSON.stringify(command) });
 });
 
+let lastVisibleId = -1;
 function modelUpdated() {
   if (!model.model?.request) return;
-  const { request } = JSON.parse(model.model.request);
+  const { request, id } = JSON.parse(model.model.request);
+
+  if (id <= lastVisibleId) return;
+  lastVisibleId = id;
 
   model.model.requestReceived();
-  cdp.onCommand(request);
+
+  for (const command of request) {
+    cdp.onCommand(command);
+  }
 }
 
 engine.whenReady.then(() => {

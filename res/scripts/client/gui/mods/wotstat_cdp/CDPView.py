@@ -1,11 +1,13 @@
 
 
 import json
+import BigWorld
 from gui import InputHandler
 from .Logger import Logger
 from frameworks.wulf import ViewModel
 from gui.impl.pub.view_component import ViewComponent
 from openwg_gameface import ModDynAccessor, gf_mod_inject
+import Queue
 
 import typing
 if typing.TYPE_CHECKING:
@@ -51,6 +53,7 @@ class CDPModel(ViewModel):
   
   def sendRequest(self, request, callback=None):
     if self.requestsQueue is None: self.requestsQueue = []
+    
     self.requestId += 1
     self.requestsQueue.append((self.requestId, request, callback))
     
@@ -108,6 +111,9 @@ class CDPView(ViewComponent[CDPModel]):
     
     self.server.viewPopulate(self)
     
+    self.isThrottled = False
+    self.commandQueue = Queue.Queue()
+    
     
   @property
   def viewModel(self):
@@ -123,8 +129,24 @@ class CDPView(ViewComponent[CDPModel]):
     self.server.sendViewCommand(self.pageId, command)
   
   def commandReceived(self, command):
-    self.viewModel.sendRequest(command)
+    self.throttleSendRequest(command)
     
+  def throttleSendRequest(self, request):
+    self.commandQueue.put(request)
+
+    if not self.isThrottled:
+      self.isThrottled = True
+      BigWorld.callback(1/30, self.throttleFlushRequests)
+
+  def throttleFlushRequests(self):
+    batch = []
+    while not self.commandQueue.empty():
+      batch.append(self.commandQueue.get())
+            
+    self.viewModel.sendRequest(batch)
+    self.isThrottled = False
+  
+
   def _finalize(self):
     # type: () -> None
     super(CDPView, self)._finalize()

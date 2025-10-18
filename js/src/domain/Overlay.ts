@@ -162,7 +162,7 @@ export class OverlayDomain extends BaseDomain {
     root.setAttribute(IGNORE_ATTRIBUTE, 'overlay.root');
     Object.assign(root.style, {
       position: "fixed",
-      left: "0", top: "0", width: "0", height: "0",
+      left: "0", top: "0", width: "100%", height: "100%",
       pointerEvents: "none",
       zIndex: "2147483647",
       contain: "layout style size paint",

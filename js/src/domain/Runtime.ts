@@ -1,13 +1,11 @@
 import BaseDomain from "./BaseDomain";
 import { isSideEffectFree } from "./utils/isSideEffectFree";
-import { Event } from "./utils/protocol";
 import { remoteObjectSerializer as serializer } from "./utils/RemoteObject";
 
+const nativeLog = window.console.log;
 export class RuntimeDomain extends BaseDomain {
 
   private isEnable = false;
-  private cacheConsole: { method: string; params: any }[] = [];
-  private cacheError: { method: string; params: any }[] = [];
 
   constructor(options: { sendCommand: (command: any) => void }) {
     super(options);
@@ -17,11 +15,9 @@ export class RuntimeDomain extends BaseDomain {
 
   enable() {
     this.isEnable = true;
-    this.cacheConsole.forEach(data => this.send(data));
-    this.cacheError.forEach(data => this.send(data));
 
     this.send({
-      method: Event.executionContextCreated,
+      method: "Runtime.executionContextCreated",
       params: {
         context: {
           id: 1,
@@ -97,13 +93,33 @@ export class RuntimeDomain extends BaseDomain {
     }
   }
 
-  private processConsoleLog(type: 'console' | 'error', data: { method: string; params: any }) {
-    if (this.isEnable) {
-      this.send(data);
-    } else {
-      if (type === 'console') this.cacheConsole.push(data)
-      else if (type === 'error') this.cacheError.push(data)
-    }
+
+  // https://github.com/stacktracejs/error-stack-parser/blob/9f33c224b5d7b607755eb277f9d51fcdb7287e24/error-stack-parser.js#L51
+  private getCallFrames(error: Error = Error()) {
+
+    if (!error.stack) return [];
+
+    const filtered = error.stack.split('\n').filter(line => line.match(/^\s*at .*(\S+:\d+|\(native\))/m));
+
+    const stack = filtered.map(line => {
+      if (line.indexOf('(eval ') > -1)
+        line = line.replace(/eval code/g, 'eval').replace(/(\(eval at [^()]*)|(,.*$)/g, '');
+
+      const parts = /at (.*)\((.*:(\d*):(\d*)|<anonymous>|.*)\)/.exec(line.replace(/^\s+/, ''));
+
+      return {
+        functionName: parts && parts[1] ? parts[1].trim() : '<anonymous>',
+        fileName: parts && parts[2] ? parts[2] : undefined,
+        url: parts && parts[2] ? parts[2] : undefined,
+        lineNumber: parts && parts[3] ? parseInt(parts[3], 10) : undefined,
+        columnNumber: parts && parts[4] ? parseInt(parts[4], 10) : undefined,
+        source: line
+      }
+    })
+
+    stack.shift(); // remove this function from callframes
+
+    return stack;
   }
 
   private hookConsole() {
@@ -127,19 +143,20 @@ export class RuntimeDomain extends BaseDomain {
       const nativeConsoleFunc = window.console[key];
       window.console[key] = (...args) => {
         nativeConsoleFunc?.(...args);
+
         const data = {
-          method: Event.consoleAPICalled,
+          method: "Runtime.consoleAPICalled",
           params: {
             type: methods[key],
             args: args.map(arg => serializer.serialize(arg, true)),
             executionContextId: 1,
             timestamp: Date.now(),
             stackTrace: {
-              callFrames: ['error', 'warn', 'trace', 'assert'].includes(key) ? [] : [],
+              callFrames: ['error', 'warn', 'trace', 'assert'].includes(key) ? this.getCallFrames() : [],
             }
           }
         };
-        this.processConsoleLog('console', data);
+        this.send(data);
       };
     };
   }
@@ -153,7 +170,7 @@ export class RuntimeDomain extends BaseDomain {
       }
 
       const data = {
-        method: Event.exceptionThrown,
+        method: "Runtime.exceptionThrown",
         params: {
           timestamp: Date.now(),
           exceptionDetails: {
@@ -165,12 +182,12 @@ export class RuntimeDomain extends BaseDomain {
               description: desc,
             },
             stackTrace: {
-              callFrames: []
+              callFrames: this.getCallFrames(error),
             },
           }
         }
       };
-      this.processConsoleLog('error', data);
+      this.send(data);
     };
 
     window.addEventListener('error', e => exceptionThrown(e.error));

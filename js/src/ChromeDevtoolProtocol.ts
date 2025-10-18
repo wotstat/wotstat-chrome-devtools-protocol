@@ -1,4 +1,5 @@
 import type BaseDomain from "./domain/BaseDomain";
+// import { CSSDomain } from "./domain/CSS";
 import { DOMDomain } from "./domain/Dom";
 import { OverlayDomain } from "./domain/Overlay";
 import { RuntimeDomain } from "./domain/Runtime";
@@ -17,6 +18,7 @@ export class ChromeDevtoolProtocol {
       'Runtime': new RuntimeDomain({ sendCommand }),
       'DOM': new DOMDomain({ sendCommand }),
       'Overlay': new OverlayDomain({ sendCommand }),
+      // 'CSS': new CSSDomain({ sendCommand }),
     }
   }
 
