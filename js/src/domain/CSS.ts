@@ -21,12 +21,15 @@ type CSSProperty = {
   important?: boolean;
   disabled?: boolean;
   implicit?: boolean;
+  text?: string;
   range?: { startLine: number; startColumn: number; endLine: number; endColumn: number };
 };
 
 type CSSStyle = {
   styleSheetId?: string;
   cssProperties: CSSProperty[];
+  cssText?: string;
+  range?: { startLine: number; startColumn: number; endLine: number; endColumn: number };
   shorthandEntries: CSSShorthandEntry[];
 };
 
@@ -50,6 +53,17 @@ type MatchedStylesForNodeResult = {
   matchedCSSRules?: CSSRuleMatch[];
   pseudoElements?: { pseudoIdentifier?: string; matches: CSSRuleMatch[] }[];
   inherited?: { inlineStyle?: CSSStyle; matchedCSSRules?: CSSRuleMatch[] }[];
+};
+
+type SetStyleTextEditParams = {
+  edits: {
+    styleSheetId: string;
+    text: string;
+    range?: { startLine: number; startColumn: number; endLine: number; endColumn: number };
+  }[]
+}
+type SetStyleTextsResult = {
+  styles: CSSStyle[]
 };
 
 export class CSSDomain extends BaseDomain {
@@ -146,6 +160,26 @@ export class CSSDomain extends BaseDomain {
     };
   }
 
+  setStyleTexts(params: SetStyleTextEditParams): SetStyleTextsResult {
+
+    const styles: CSSStyle[] = [];
+
+    for (const edit of params.edits) {
+      if (edit.styleSheetId.startsWith("inline::")) {
+        const nodeId = stylesheetStorage.getNodeIdForInlineStyleId(edit.styleSheetId);
+        const node = domStorage.getNodeById(nodeId);
+        if (node && domStorage.isElement(node)) {
+          node.setAttribute("style", edit.text);
+          const style = this.serializeStyle(edit.text, edit.styleSheetId);
+          styles.push(style);
+        }
+        continue;
+      }
+    }
+
+    return { styles };
+  }
+
   private collectMatchingRules(element: Element): CSSRuleMatch[] {
     return this.stylesheets.flatMap(s => s.getMatchingRulesForElement(element));
   }
@@ -161,33 +195,60 @@ export class CSSDomain extends BaseDomain {
   }
 
   private inlineStyleForElement(element: Element): CSSStyle | undefined {
-    const style = (element as HTMLElement).style;
-    if (!style) return undefined;
+    const style = element.getAttribute("style");
     const id = stylesheetStorage.getOrCreateInlineStyleIdForNodeId(domStorage.getOrCreateNodeId(element));
-    return this.serializeStyle(style, id);
+    return this.serializeStyle(style || '', id);
   }
 
-  private serializeStyle(style: CSSStyleDeclaration, styleSheetId?: string): CSSStyle {
+  private serializeStyle(styleText: string, styleSheetId?: string): CSSStyle {
     const cssProperties: CSSProperty[] = [];
 
-    const text = style.cssText;
+    const text = styleText;
     if (text) {
-      const declarations = text.split(";").map(s => s.trim()).filter(s => s);
-      for (const decl of declarations) {
-        const colonIdx = decl.indexOf(":");
-        if (colonIdx === -1) continue;
-        const name = decl.slice(0, colonIdx).trim();
-        const valuePart = decl.slice(colonIdx + 1).trim();
-        let value = valuePart;
-        let important = false;
-        if (valuePart.endsWith("!important")) {
-          important = true;
-          value = valuePart.slice(0, -10).trim();
-        }
-        cssProperties.push({ name, value, important });
+      const parts = text.match(/\/\*.*?\*\/|[^;]+;/g);
+      if (!parts) {
+        return {
+          styleSheetId,
+          cssProperties,
+          cssText: text,
+          range: { startLine: 0, startColumn: 0, endLine: 0, endColumn: text.length },
+          shorthandEntries: []
+        };
+      }
+
+      let letterIndex = 0
+
+      for (const part of parts) {
+        letterIndex += part.length;
+
+        const commented = part.trim().startsWith("/*");
+        const clean = commented ? part.replace(/^\/\*|\*\/$/g, "").trim() : part.trim();
+        const match = clean.match(/^([\w-]+)\s*:\s*(.*?)\s*(?:!important)?;?$/i);
+
+        if (!match) continue
+
+        const name = match[1];
+        const value = match[2].replace(/\s*!important\s*$/i, "");
+        const important = /\!important/i.test(clean);
+
+        cssProperties.push({
+          name: name,
+          value: value,
+          important: important,
+          disabled: commented,
+          text: commented ? `/* ${name}: ${value}; */` : `${name}: ${value};`,
+          range: { startLine: 0, startColumn: letterIndex - part.length, endLine: 0, endColumn: letterIndex }
+        });
       }
     }
-    return { styleSheetId, cssProperties, shorthandEntries: [] };
+
+    return {
+      styleSheetId,
+      cssProperties,
+      cssText: text,
+      range: { startLine: 0, startColumn: 0, endLine: 0, endColumn: text.length },
+      shorthandEntries: []
+    };
   }
 
 }

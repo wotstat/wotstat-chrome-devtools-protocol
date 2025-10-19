@@ -33,6 +33,15 @@ export class StylesheetStorage {
     this.inlineStyleByIdByNodeId.set(nodeId, id);
     return id;
   }
+
+  getNodeIdForInlineStyleId(inlineStyleId: string): number {
+    const prefix = "inline::";
+    if (!inlineStyleId.startsWith(prefix)) throw new Error("Not an inline style id: " + inlineStyleId);
+    const nodeIdStr = inlineStyleId.substring(prefix.length);
+    const nodeId = parseInt(nodeIdStr, 10);
+    if (isNaN(nodeId)) throw new Error("Invalid node id in inline style id: " + inlineStyleId);
+    return nodeId;
+  }
 }
 
 export const stylesheetStorage = new StylesheetStorage();
