@@ -1,5 +1,5 @@
 import type BaseDomain from "./domain/BaseDomain";
-// import { CSSDomain } from "./domain/CSS";
+import { CSSDomain } from "./domain/CSS";
 import { DOMDomain } from "./domain/Dom";
 import { OverlayDomain } from "./domain/Overlay";
 import { RuntimeDomain } from "./domain/Runtime";
@@ -14,11 +14,12 @@ export class ChromeDevtoolProtocol {
   readonly domains: { [key: string]: BaseDomain } = {}
 
   constructor(private sendCommand: (command: any) => void) {
+    const domDomain = new DOMDomain({ sendCommand });
     this.domains = {
       'Runtime': new RuntimeDomain({ sendCommand }),
-      'DOM': new DOMDomain({ sendCommand }),
-      'Overlay': new OverlayDomain({ sendCommand }),
-      // 'CSS': new CSSDomain({ sendCommand }),
+      'DOM': domDomain,
+      'Overlay': new OverlayDomain({ sendCommand }, domDomain),
+      'CSS': new CSSDomain({ sendCommand }),
     }
   }
 

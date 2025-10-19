@@ -1,5 +1,6 @@
 // OverlayDomain.ts — non-overlapping rings, no ShadowRoot
 import BaseDomain, { type Options } from "./BaseDomain";
+import type { DOMDomain } from "./Dom";
 import DomStorage, { domStorage, IGNORE_ATTRIBUTE } from "./utils/DomStorage";
 
 
@@ -12,13 +13,14 @@ type HighlightConfig = {
   contentColor?: RGBA;
 };
 type HighlightNodeParams = { nodeId?: number; selector?: string; highlightConfig?: HighlightConfig };
-type SetInspectModeParams = { mode: "search" | "none"; highlightConfig?: HighlightConfig };
+type SetInspectModeParams = { mode: "searchForNode" | "none"; highlightConfig?: HighlightConfig };
 
 type Ring = { t: HTMLDivElement; r: HTMLDivElement; b: HTMLDivElement; l: HTMLDivElement };
 type Rect = { x: number; y: number; w: number; h: number };
 
 export class OverlayDomain extends BaseDomain {
   private store: DomStorage;
+  private dom: DOMDomain;
 
   // overlay nodes
   private root?: HTMLDivElement;
@@ -42,9 +44,10 @@ export class OverlayDomain extends BaseDomain {
   private onKey = (e: KeyboardEvent) => this.handleKey(e);
   private onScrollOrResize = () => this.redraw();
 
-  constructor(options: Options) {
+  constructor(options: Options, dom: DOMDomain) {
     super({ sendCommand: options.sendCommand });
     this.store = domStorage;
+    this.dom = dom;
   }
 
   enable() {
@@ -67,7 +70,7 @@ export class OverlayDomain extends BaseDomain {
   setInspectMode(params: SetInspectModeParams) {
     const { mode, highlightConfig } = params;
     if (highlightConfig) this.currentConfig = { ...this.defaults(), ...highlightConfig };
-    if (mode === "search") this.startInspecting();
+    if (mode === "searchForNode") this.startInspecting();
     else this.stopInspecting();
     return { result: {} };
   }
@@ -134,16 +137,17 @@ export class OverlayDomain extends BaseDomain {
     this.renderTarget(el, this.currentConfig || this.defaults());
   }
 
-  private handleClick(e: MouseEvent) {
+  private async handleClick(e: MouseEvent) {
     e.preventDefault();
     e.stopPropagation();
     const t = e.target as Node | null;
     if (!t) return;
     const node = t.nodeType === Node.TEXT_NODE ? t : (t as Element);
-    const nodeId = this.store.getOrCreateNodeId(node);
-
-    this.send({ method: "Overlay.inspectNodeRequested", params: { backendNodeId: nodeId, nodeId } });
     this.stopInspecting();
+    await this.dom.requestHierarchyToTargetNode(node);
+
+    const nodeId = this.store.getOrCreateNodeId(node);
+    this.send({ method: "Overlay.inspectNodeRequested", params: { backendNodeId: nodeId, nodeId } });
   }
 
   private handleKey(e: KeyboardEvent) {

@@ -60,6 +60,41 @@ export class DOMDomain extends BaseDomain {
     this.emitSetChildNodes({ parentId: nodeId, nodes });
   }
 
+  pushNodesByBackendIdsToFrontend(params: { backendNodeIds: number[] }) {
+    const { backendNodeIds } = params;
+
+    return { nodeIds: backendNodeIds }
+  }
+
+  async requestHierarchyToTargetNode(node: Node) {
+
+    const pathToRoot: Node[] = [];
+    let current: Node | null = node;
+    while (current) {
+      pathToRoot.push(current);
+      current = current.parentNode;
+    }
+
+    const path = pathToRoot.reverse()
+    path.shift();
+    path.shift();
+
+    for (let i = 0; i < path.length - 1; i++) {
+      if (this.store.isRegistered(path[i + 1])) continue;
+
+      const nodes: ProtocolNode[] = [];
+      for (const child of path[i].childNodes) {
+        if (child.nodeType == Node.TEXT_NODE && child.nodeValue?.trim() === "") continue;
+        nodes.push(this.store.serializeNode(child, { depth: 0, pierce: false }));
+      }
+
+      this.emitSetChildNodes({ parentId: this.store.getOrCreateNodeId(path[i]), nodes });
+      await new Promise(resolve => setTimeout(resolve, 10));
+    }
+
+    return { result: {} };
+  }
+
   setAttributesAsText(params: { nodeId: number; text: string; name?: string }) {
     const { nodeId, text, name } = params;
     const node = this.store.getNodeById(nodeId);
