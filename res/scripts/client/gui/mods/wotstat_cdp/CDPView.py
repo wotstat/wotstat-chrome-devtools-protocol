@@ -59,6 +59,10 @@ class CDPModel(ViewModel):
     
     self.__processNextRequest()
     
+  def clearRequests(self):
+    if self.requestsQueue is not None:
+      self.requestsQueue = []
+    
   def __processNextRequest(self):
     if len(self.requestsQueue) == 0: return
     if not self.lastRequestReceived: return
@@ -130,6 +134,12 @@ class CDPView(ViewComponent[CDPModel]):
   
   def commandReceived(self, command):
     self.throttleSendRequest(command)
+    
+  def connectionClosed(self):
+    while not self.commandQueue.empty():
+      self.commandQueue.get()
+    self.viewModel.clearRequests()
+    self.viewModel.sendRequest('DISCONNECT')
     
   def throttleSendRequest(self, request):
     self.commandQueue.put(request)

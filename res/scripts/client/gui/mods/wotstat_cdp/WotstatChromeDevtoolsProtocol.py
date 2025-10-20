@@ -23,7 +23,7 @@ class WotstatChromeDevtoolsProtocol(object):
       SimpleLoggerBackend(prefix="[MOD_WOTSTAT_CDP]", minLevel="INFO" if not DEBUG_MODE else "DEBUG"),
     ])
     
-    self.server = CDPServer(9223)
+    self.server = CDPServer(9222)
     
     def initChildren(obj):
       className = type(obj).__name__
@@ -36,7 +36,7 @@ class WotstatChromeDevtoolsProtocol(object):
       self.tabId += 1
       obj.setChildView(
         CDPView.viewLayoutID(),
-        CDPView(self.server, className, 'tab-%d' % self.tabId)
+        CDPView(self.server, className, '%s#%d' % (className, self.tabId))
       )
 
     install_initchildren_hook(ViewComponent, before_fn=initChildren)

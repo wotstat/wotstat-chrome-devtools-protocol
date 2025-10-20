@@ -12,6 +12,9 @@ const PRESENTATION_ATTRS: Record<string, string> = {
   align: "text-align",
 };
 
+// To prevent log error like: [Gameface] Could not evaluate property value in px units. Property was not converted to px units.
+const IGNORED_PROPERTY_POSTFIXES = ['PERCENT', 'VW', 'VH', 'REM', 'PX'];
+
 type CSSComputedStyleProperty = { name: string; value: string };
 type CSSShorthandEntry = { name: string; value: string; important?: boolean };
 
@@ -143,6 +146,7 @@ export class CSSDomain extends BaseDomain {
 
     const computedStyle: CSSComputedStyleProperty[] = []
     for (const key in style) {
+      if (IGNORED_PROPERTY_POSTFIXES.some(postfix => key.endsWith(postfix))) continue
       try { computedStyle.push({ name: key, value: style[key] }); } catch { /* some properties may throw */ }
     }
 

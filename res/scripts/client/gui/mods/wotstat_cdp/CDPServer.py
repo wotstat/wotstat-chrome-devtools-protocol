@@ -32,14 +32,17 @@ class WSClient(WebSocket):
         items = []
         port = self.server.port
         
-        for view in instance.views.values():
+        tabs = instance.views.values()
+        sortedTabs = sorted(tabs, key=lambda v: ('Presenter' in v.pageName, v.pageName))
+        
+        for view in sortedTabs:
           items.append('''
             {
               "devtoolsFrontendUrl": "devtools://devtools/bundled/inspector.html?ws=localhost:%d/ws/%s",
               "id": "%s",
               "title": "%s",
               "type": "page",
-              "url": "wot://wotstat-cdp-%s",
+              "url": "coui://%s",
               "webSocketDebuggerUrl": "ws://localhost:%d/ws/%s"
             }
           ''' % (port, view.pageId, view.pageId, view.pageName, view.pageId, port, view.pageId))
@@ -70,6 +73,8 @@ class WSClient(WebSocket):
   def handle_close(self):
     logger.info("Disconnected %s; path=%s" % (str(self.address), self.request.path))
     clients.pop(self.viewId, None)
+    if instance is not None and self.viewId is not None:
+      instance.onConnectionClosed(self.viewId)
   
   @property
   def viewId(self):
@@ -121,6 +126,14 @@ class CDPServer(object):
       return
     view = self.views[viewId]
     view.commandReceived(command)
+    
+  def onConnectionClosed(self, viewId):
+    # type: (str) -> None
+    if viewId not in self.views:
+      logger.error("onConnectionClosed: viewId %s not found" % viewId)
+      return
+    view = self.views[viewId]
+    view.connectionClosed()
     
   def sendViewCommand(self, viewId, command):
     # type: (str, str) -> None
