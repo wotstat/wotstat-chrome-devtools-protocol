@@ -9,12 +9,23 @@ type Model = {
 
 const model = ModelObserver<Model>('WOTSTAT_CHROME_DEVTOOLS_PROTOCOL_VIEW');
 
-const cdp = new ChromeDevtoolProtocol((command) => {
-  model.model?.sendCommand({ command: JSON.stringify(command) });
-});
+function initCdp() {
+  return new ChromeDevtoolProtocol((command) => {
+    model.model?.sendCommand({ command: JSON.stringify(command) });
+  });
+}
 
+let cdp = initCdp();
 let lastVisibleId = -1;
 function modelUpdated() {
+
+  if (model.model?.request === 'DISCONNECT') {
+    cdp.dispose();
+    cdp = initCdp();
+    lastVisibleId = -1;
+    return;
+  }
+
   if (!model.model?.request) return;
   const { request, id } = JSON.parse(model.model.request);
 

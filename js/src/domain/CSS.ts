@@ -1,5 +1,5 @@
 import BaseDomain, { type Options } from "./BaseDomain";
-import { domStorage } from "./utils/DomStorage";
+import type DomStorage from "./utils/DomStorage";
 import Stylesheet from "./utils/Stylesheet";
 import { stylesheetStorage, type CSSStyleSheetOrigin } from "./utils/StylesheetStorage";
 
@@ -69,14 +69,20 @@ type SetStyleTextsResult = {
 export class CSSDomain extends BaseDomain {
 
   private stylesheets: Stylesheet[] = [];
+  private readonly domStorage: DomStorage;
 
-  constructor(options: Options) {
+  constructor(options: Options & { domStorage: DomStorage }) {
     super({ sendCommand: options.sendCommand });
+    this.domStorage = options.domStorage;
   }
 
   enable() {
     this.parseCSSStyles();
     return {};
+  }
+
+  dispose() {
+    this.stylesheets = [];
   }
 
   private async parseCSSStyles() {
@@ -126,14 +132,14 @@ export class CSSDomain extends BaseDomain {
   }
 
   getComputedStyleForNode(params: { nodeId: number }): { computedStyle: CSSComputedStyleProperty[] } {
-    const node = domStorage.getNodeById(params.nodeId);
+    const node = this.domStorage.getNodeById(params.nodeId);
     if (!node) return { computedStyle: [] };
 
-    const element = domStorage.isElement(node);
+    const element = this.domStorage.isElement(node);
     if (!element && !(['::before', '::after'].includes(node.nodeName?.toLowerCase()))) return { computedStyle: [] };
 
 
-    const style = domStorage.isElement(node) ? window.getComputedStyle(node) : window.getComputedStyle(node.parentNode as Element, node.nodeName);
+    const style = this.domStorage.isElement(node) ? window.getComputedStyle(node) : window.getComputedStyle(node.parentNode as Element, node.nodeName);
 
     const computedStyle: CSSComputedStyleProperty[] = []
     for (const key in style) {
@@ -144,9 +150,9 @@ export class CSSDomain extends BaseDomain {
   }
 
   getInlineStylesForNode(params: { nodeId: number }): InlineStyleForNodeResult {
-    const node = domStorage.getNodeById(params.nodeId);
+    const node = this.domStorage.getNodeById(params.nodeId);
 
-    if (!node || !domStorage.isElement(node)) return {}
+    if (!node || !this.domStorage.isElement(node)) return {}
 
     const inlineStyle = this.inlineStyleForElement(node);
     const attributesStyle = this.attributesStyleForElement(node);
@@ -154,9 +160,9 @@ export class CSSDomain extends BaseDomain {
   }
 
   getMatchedStylesForNode(params: { nodeId: number }): MatchedStylesForNodeResult {
-    const node = domStorage.getNodeById(params.nodeId);
+    const node = this.domStorage.getNodeById(params.nodeId);
 
-    if (!node || !domStorage.isElement(node)) return {};
+    if (!node || !this.domStorage.isElement(node)) return {};
 
     const inlineStyle = this.inlineStyleForElement(node);
     const attributesStyle = this.attributesStyleForElement(node);
@@ -182,8 +188,8 @@ export class CSSDomain extends BaseDomain {
     const sheetId = params.styleSheetId;
     if (sheetId.startsWith("inline::")) {
       const nodeId = stylesheetStorage.getNodeIdForInlineStyleId(sheetId);
-      const node = domStorage.getNodeById(nodeId);
-      if (node && domStorage.isElement(node)) {
+      const node = this.domStorage.getNodeById(nodeId);
+      if (node && this.domStorage.isElement(node)) {
         const style = node.getAttribute("style") || '';
         const disabledStyle = node.getAttribute("_style") || '';
         return { text: style + disabledStyle };
@@ -207,8 +213,8 @@ export class CSSDomain extends BaseDomain {
     for (const edit of params.edits) {
       if (edit.styleSheetId.startsWith("inline::")) {
         const nodeId = stylesheetStorage.getNodeIdForInlineStyleId(edit.styleSheetId);
-        const node = domStorage.getNodeById(nodeId);
-        if (node && domStorage.isElement(node)) {
+        const node = this.domStorage.getNodeById(nodeId);
+        if (node && this.domStorage.isElement(node)) {
           const style = this.serializeStyle(edit.text, edit.styleSheetId);
 
           const enabledStyles = style.cssProperties.filter(p => !p.disabled).map(p => p.text).join('');
@@ -254,7 +260,7 @@ export class CSSDomain extends BaseDomain {
   private inlineStyleForElement(element: Element): CSSStyle | undefined {
     const style = element.getAttribute("style") || '';
     const disabledStyle = element.getAttribute("_style") || '';
-    const id = stylesheetStorage.getOrCreateInlineStyleIdForNodeId(domStorage.getOrCreateNodeId(element));
+    const id = stylesheetStorage.getOrCreateInlineStyleIdForNodeId(this.domStorage.getOrCreateNodeId(element));
     return this.serializeStyle(style + disabledStyle, id);
   }
 

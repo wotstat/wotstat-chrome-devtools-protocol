@@ -3,6 +3,8 @@ import { CSSDomain } from "./domain/CSS";
 import { DOMDomain } from "./domain/Dom";
 import { OverlayDomain } from "./domain/Overlay";
 import { RuntimeDomain } from "./domain/Runtime";
+import DomStorage from "./domain/utils/DomStorage";
+import { RemoteObjectStorage } from "./domain/utils/RemoteObjectStorage";
 
 type Message = { id: number; method: string; params: any }
 function isMessage(obj: any): obj is Message {
@@ -13,13 +15,16 @@ export class ChromeDevtoolProtocol {
 
   readonly domains: { [key: string]: BaseDomain } = {}
 
+  private readonly domStorage = new DomStorage();
+  private readonly remoteObjectStorage = new RemoteObjectStorage();
+
   constructor(private sendCommand: (command: any) => void) {
-    const domDomain = new DOMDomain({ sendCommand });
+    const domDomain = new DOMDomain({ sendCommand, domStorage: this.domStorage, remoteObjectStorage: this.remoteObjectStorage });
     this.domains = {
-      'Runtime': new RuntimeDomain({ sendCommand }),
+      'Runtime': new RuntimeDomain({ sendCommand, remoteObjectStorage: this.remoteObjectStorage }),
       'DOM': domDomain,
-      'Overlay': new OverlayDomain({ sendCommand }, domDomain),
-      'CSS': new CSSDomain({ sendCommand }),
+      'Overlay': new OverlayDomain({ sendCommand, dom: domDomain, domStorage: this.domStorage }),
+      'CSS': new CSSDomain({ sendCommand, domStorage: this.domStorage }),
     }
   }
 
@@ -47,5 +52,11 @@ export class ChromeDevtoolProtocol {
 
     const response = this.execute(message);
     if (response) this.sendCommand(response);
+  }
+
+  dispose() {
+    Object.values(this.domains).forEach(domain => domain.dispose());
+    this.domStorage.dispose();
+    this.remoteObjectStorage.dispose();
   }
 }

@@ -15,4 +15,6 @@ export default class BaseDomain {
   send(data: any) {
     this.sendCommand(data);
   }
+
+  dispose() { }
 }

@@ -1,18 +1,20 @@
 import BaseDomain, { type Options } from "./BaseDomain";
-import DomStorage, { domStorage, type ProtocolNode } from "./utils/DomStorage";
-import { remoteObjectSerializer } from "./utils/RemoteObject";
+import DomStorage, { type ProtocolNode } from "./utils/DomStorage";
+import type { RemoteObjectStorage } from "./utils/RemoteObjectStorage";
 
 type GetDocumentParams = { depth?: number; pierce?: boolean };
 type RequestChildNodesParams = { nodeId: number; depth?: number; pierce?: boolean };
 
 export class DOMDomain extends BaseDomain {
-  private store: DomStorage;
+  private readonly domStorage: DomStorage;
+  private readonly remoteObjectStorage: RemoteObjectStorage;
   private observer?: MutationObserver;
   private observing = false;
 
-  constructor(options: Options) {
+  constructor(options: Options & { domStorage: DomStorage, remoteObjectStorage: RemoteObjectStorage }) {
     super(options);
-    this.store = domStorage;
+    this.domStorage = options.domStorage;
+    this.remoteObjectStorage = options.remoteObjectStorage;
   }
 
   enable() {
@@ -36,9 +38,13 @@ export class DOMDomain extends BaseDomain {
     this.observing = false;
   }
 
+  dispose() {
+    this.domStorage.dispose();
+  }
+
   getDocument(params: GetDocumentParams = {}) {
     const depth = params.depth ?? 1;
-    const root: ProtocolNode = this.store.serializeNode(document, { depth, pierce: false });
+    const root: ProtocolNode = this.domStorage.serializeNode(document, { depth, pierce: false });
     return { root };
   }
 
@@ -46,7 +52,7 @@ export class DOMDomain extends BaseDomain {
     const { nodeId } = params;
     const depth = params.depth ?? 1;
 
-    const node = this.store.getNodeById(nodeId);
+    const node = this.domStorage.getNodeById(nodeId);
     if (!node) return { error: `DOM.requestChildNodes: Unknown nodeId ${nodeId}` };
 
     const nodes: ProtocolNode[] = [];
@@ -54,7 +60,7 @@ export class DOMDomain extends BaseDomain {
 
     for (const child of node.childNodes) {
       if (child.nodeType == Node.TEXT_NODE && child.nodeValue?.trim() === "") continue;
-      nodes.push(this.store.serializeNode(child, { depth: childDepth, pierce: false }));
+      nodes.push(this.domStorage.serializeNode(child, { depth: childDepth, pierce: false }));
     }
 
     this.emitSetChildNodes({ parentId: nodeId, nodes });
@@ -80,15 +86,15 @@ export class DOMDomain extends BaseDomain {
     path.shift();
 
     for (let i = 0; i < path.length - 1; i++) {
-      if (this.store.isRegistered(path[i + 1])) continue;
+      if (this.domStorage.isRegistered(path[i + 1])) continue;
 
       const nodes: ProtocolNode[] = [];
       for (const child of path[i].childNodes) {
         if (child.nodeType == Node.TEXT_NODE && child.nodeValue?.trim() === "") continue;
-        nodes.push(this.store.serializeNode(child, { depth: 0, pierce: false }));
+        nodes.push(this.domStorage.serializeNode(child, { depth: 0, pierce: false }));
       }
 
-      this.emitSetChildNodes({ parentId: this.store.getOrCreateNodeId(path[i]), nodes });
+      this.emitSetChildNodes({ parentId: this.domStorage.getOrCreateNodeId(path[i]), nodes });
       await new Promise(resolve => setTimeout(resolve, 10));
     }
 
@@ -97,7 +103,7 @@ export class DOMDomain extends BaseDomain {
 
   setAttributesAsText(params: { nodeId: number; text: string; name?: string }) {
     const { nodeId, text, name } = params;
-    const node = this.store.getNodeById(nodeId);
+    const node = this.domStorage.getNodeById(nodeId);
     if (!node) return { error: `DOM.setAttributesAsText: Unknown nodeId ${nodeId}` };
     if (node.nodeType !== Node.ELEMENT_NODE) return { error: `DOM.setAttributesAsText: nodeId ${nodeId} is not an element` };
 
@@ -133,7 +139,7 @@ export class DOMDomain extends BaseDomain {
 
   setNodeValue(params: { nodeId: number; value: string }) {
     const { nodeId, value } = params;
-    const node = this.store.getNodeById(nodeId);
+    const node = this.domStorage.getNodeById(nodeId);
     if (!node) return { error: `DOM.setNodeValue: Unknown nodeId ${nodeId}` };
     if (node.nodeType !== Node.TEXT_NODE && node.nodeType !== Node.COMMENT_NODE && node.nodeType !== Node.CDATA_SECTION_NODE) {
       return { error: `DOM.setNodeValue: nodeId ${nodeId} is not a text, comment, or cdata node` };
@@ -144,22 +150,22 @@ export class DOMDomain extends BaseDomain {
 
   resolveNode(params: { nodeId: number }) {
     const { nodeId } = params;
-    const node = this.store.getNodeById(nodeId);
+    const node = this.domStorage.getNodeById(nodeId);
     if (!node) return { error: `DOM.resolveNode: Unknown nodeId ${nodeId}` };
-    return { object: remoteObjectSerializer.serialize(node) };
+    return { object: this.remoteObjectStorage.serialize(node) };
   }
 
   requestNode(params: { objectId: string }) {
     const { objectId } = params;
-    const node = remoteObjectSerializer.getObjectById(objectId) as Node | undefined;
+    const node = this.remoteObjectStorage.getObjectById(objectId) as Node | undefined;
     if (!node) return { error: `DOM.requestNode: Unknown objectId ${objectId}` };
-    const nodeId = this.store.getOrCreateNodeId(node);
+    const nodeId = this.domStorage.getOrCreateNodeId(node);
     return { nodeId };
   }
 
   removeNode(params: { nodeId: number }) {
     const { nodeId } = params;
-    const node = this.store.getNodeById(nodeId);
+    const node = this.domStorage.getNodeById(nodeId);
     if (!node) return { error: `DOM.removeNode: Unknown nodeId ${nodeId}` };
     if (!node.parentNode) return { error: `DOM.removeNode: nodeId ${nodeId} has no parent` };
     node.parentNode.removeChild(node);
@@ -168,32 +174,32 @@ export class DOMDomain extends BaseDomain {
 
   getOuterHTML(params: { nodeId: number }) {
     const { nodeId } = params;
-    const node = this.store.getNodeById(nodeId);
+    const node = this.domStorage.getNodeById(nodeId);
     if (!node) return { error: `DOM.getOuterHTML: Unknown nodeId ${nodeId}` };
-    if (!this.store.isElement(node)) return { error: `DOM.getOuterHTML: nodeId ${nodeId} is not an element` };
+    if (!this.domStorage.isElement(node)) return { error: `DOM.getOuterHTML: nodeId ${nodeId} is not an element` };
     return { outerHTML: (node as Element).outerHTML };
   }
 
   setOuterHTML(params: { nodeId: number; outerHTML: string }) {
     const { nodeId, outerHTML } = params;
-    const node = this.store.getNodeById(nodeId);
+    const node = this.domStorage.getNodeById(nodeId);
     if (!node) return { error: `DOM.setOuterHTML: Unknown nodeId ${nodeId}` };
-    if (!this.store.isElement(node)) return { error: `DOM.setOuterHTML: nodeId ${nodeId} is not an element` };
+    if (!this.domStorage.isElement(node)) return { error: `DOM.setOuterHTML: nodeId ${nodeId} is not an element` };
     (node as Element).outerHTML = outerHTML;
     return { result: {} };
   }
 
   copyTo(params: { nodeId: number; targetNodeId: number; insertBeforeNodeId?: number }) {
     const { nodeId, targetNodeId, insertBeforeNodeId } = params;
-    const node = this.store.getNodeById(nodeId);
+    const node = this.domStorage.getNodeById(nodeId);
     if (!node) return { error: `DOM.copyTo: Unknown nodeId ${nodeId}` };
 
-    const targetNode = this.store.getNodeById(targetNodeId);
+    const targetNode = this.domStorage.getNodeById(targetNodeId);
     if (!targetNode) return { error: `DOM.copyTo: Unknown targetNodeId ${targetNodeId}` };
 
-    if (!this.store.isElement(targetNode)) return { error: `DOM.copyTo: targetNodeId ${targetNodeId} is not an element` };
+    if (!this.domStorage.isElement(targetNode)) return { error: `DOM.copyTo: targetNodeId ${targetNodeId} is not an element` };
 
-    const insertBeforeNode = insertBeforeNodeId ? this.store.getNodeById(insertBeforeNodeId) : null;
+    const insertBeforeNode = insertBeforeNodeId ? this.domStorage.getNodeById(insertBeforeNodeId) : null;
     if (insertBeforeNodeId && !insertBeforeNode) return { error: `DOM.copyTo: Unknown insertBeforeNodeId ${insertBeforeNodeId}` };
     if (insertBeforeNode && insertBeforeNode.parentNode !== targetNode) return { error: `DOM.copyTo: insertBeforeNodeId ${insertBeforeNodeId} is not a child of targetNodeId ${targetNodeId}` };
 
@@ -201,22 +207,22 @@ export class DOMDomain extends BaseDomain {
     if (insertBeforeNode) targetNode.insertBefore(clone, insertBeforeNode);
     else targetNode.appendChild(clone);
 
-    const newId = this.store.getOrCreateNodeId(clone);
+    const newId = this.domStorage.getOrCreateNodeId(clone);
     return { nodeId: newId };
   }
 
   moveTo(params: { nodeId: number; targetNodeId: number; insertBeforeNodeId?: number }) {
     const { nodeId, targetNodeId, insertBeforeNodeId } = params;
-    const node = this.store.getNodeById(nodeId);
+    const node = this.domStorage.getNodeById(nodeId);
     if (!node) return { error: `DOM.moveTo: Unknown nodeId ${nodeId}` };
     if (!node.parentNode) return { error: `DOM.moveTo: nodeId ${nodeId} has no parent` };
 
-    const targetNode = this.store.getNodeById(targetNodeId);
+    const targetNode = this.domStorage.getNodeById(targetNodeId);
     if (!targetNode) return { error: `DOM.moveTo: Unknown targetNodeId ${targetNodeId}` };
 
-    if (!this.store.isElement(targetNode)) return { error: `DOM.moveTo: targetNodeId ${targetNodeId} is not an element` };
+    if (!this.domStorage.isElement(targetNode)) return { error: `DOM.moveTo: targetNodeId ${targetNodeId} is not an element` };
 
-    const insertBeforeNode = insertBeforeNodeId ? this.store.getNodeById(insertBeforeNodeId) : null;
+    const insertBeforeNode = insertBeforeNodeId ? this.domStorage.getNodeById(insertBeforeNodeId) : null;
     if (insertBeforeNodeId && !insertBeforeNode) return { error: `DOM.moveTo: Unknown insertBeforeNodeId ${insertBeforeNodeId}` };
     if (insertBeforeNode && insertBeforeNode.parentNode !== targetNode) return { error: `DOM.moveTo: insertBeforeNodeId ${insertBeforeNodeId} is not a child of targetNodeId ${targetNodeId}` };
 
@@ -224,7 +230,7 @@ export class DOMDomain extends BaseDomain {
     if (insertBeforeNode) targetNode.insertBefore(node, insertBeforeNode);
     else targetNode.appendChild(node);
 
-    const newId = this.store.getOrCreateNodeId(node);
+    const newId = this.domStorage.getOrCreateNodeId(node);
     return { nodeId: newId };
   }
 
@@ -232,8 +238,8 @@ export class DOMDomain extends BaseDomain {
 
   private handleMutations = (records: MutationRecord[]) => {
     for (const rec of records) {
-      if (this.store.isIgnored(rec.target)) continue;
-      if (!this.store.isRegistered(rec.target)) continue;
+      if (this.domStorage.isIgnored(rec.target)) continue;
+      if (!this.domStorage.isRegistered(rec.target)) continue;
 
       switch (rec.type) {
         case "childList":
@@ -244,7 +250,7 @@ export class DOMDomain extends BaseDomain {
           this.handleAttributeChange(rec);
           break;
         case "characterData":
-          if (rec.target.parentNode && this.store.isIgnored(rec.target.parentNode) && !this.store.isRegistered(rec.target.parentNode)) continue;
+          if (rec.target.parentNode && this.domStorage.isIgnored(rec.target.parentNode) && !this.domStorage.isRegistered(rec.target.parentNode)) continue;
           this.handleCharacterData(rec);
           break;
       }
@@ -253,19 +259,19 @@ export class DOMDomain extends BaseDomain {
 
   private handleAdditions(rec: MutationRecord) {
     const parent = rec.target as Node;
-    const parentNodeId = this.store.getOrCreateNodeId(parent);
+    const parentNodeId = this.domStorage.getOrCreateNodeId(parent);
 
     for (const added of Array.from(rec.addedNodes)) {
-      if (!this.store.isSerializableNode(added)) continue;
+      if (!this.domStorage.isSerializableNode(added)) continue;
 
       let previousSibling = added.previousSibling;
 
-      while (previousSibling && !this.store.isSerializableNode(previousSibling))
+      while (previousSibling && !this.domStorage.isSerializableNode(previousSibling))
         previousSibling = previousSibling.previousSibling;
 
-      const previousNodeId = previousSibling ? this.store.getOrCreateNodeId(previousSibling) : 0;
+      const previousNodeId = previousSibling ? this.domStorage.getOrCreateNodeId(previousSibling) : 0;
 
-      const nodePayload = this.store.serializeNode(added, { depth: 1, pierce: false });
+      const nodePayload = this.domStorage.serializeNode(added, { depth: 1, pierce: false });
 
       this.send({
         method: "DOM.childNodeInserted",
@@ -280,22 +286,22 @@ export class DOMDomain extends BaseDomain {
 
   private handleRemovals(rec: MutationRecord) {
     const parent = rec.target;
-    const parentNodeId = this.store.getOrCreateNodeId(parent);
+    const parentNodeId = this.domStorage.getOrCreateNodeId(parent);
 
     for (const removed of Array.from(rec.removedNodes)) {
-      if (this.store.isIgnored(removed)) {
-        this.store.forgetSubtree(removed);
+      if (this.domStorage.isIgnored(removed)) {
+        this.domStorage.forgetSubtree(removed);
         continue;
       }
 
-      const nodeId = this.store.getOrCreateNodeId(removed);
+      const nodeId = this.domStorage.getOrCreateNodeId(removed);
 
       this.send({
         method: "DOM.childNodeRemoved",
         params: { parentNodeId, nodeId },
       });
 
-      this.store.forgetSubtree(removed);
+      this.domStorage.forgetSubtree(removed);
     }
   }
 
@@ -305,7 +311,7 @@ export class DOMDomain extends BaseDomain {
 
   private handleAttributeChange(rec: MutationRecord) {
     const el = rec.target as Element;
-    const nodeId = this.store.getOrCreateNodeId(el);
+    const nodeId = this.domStorage.getOrCreateNodeId(el);
     const name = rec.attributeName!;
     const value = el.getAttribute(name);
 
@@ -343,7 +349,7 @@ export class DOMDomain extends BaseDomain {
 
   private handleCharacterData(rec: MutationRecord) {
     const node = rec.target as CharacterData;
-    const nodeId = this.store.getOrCreateNodeId(node);
+    const nodeId = this.domStorage.getOrCreateNodeId(node);
     this.send({
       method: "DOM.characterDataModified",
       params: { nodeId, characterData: node.data },

@@ -1,14 +1,16 @@
-import BaseDomain from "./BaseDomain";
+import BaseDomain, { type Options } from "./BaseDomain";
 import { isSideEffectFree } from "./utils/isSideEffectFree";
-import { remoteObjectSerializer as serializer } from "./utils/RemoteObject";
+import type { RemoteObjectStorage } from "./utils/RemoteObjectStorage";
 
 const nativeLog = window.console.log;
 export class RuntimeDomain extends BaseDomain {
 
   private isEnable = false;
+  private readonly storage: RemoteObjectStorage
 
-  constructor(options: { sendCommand: (command: any) => void }) {
+  constructor(options: Options & { remoteObjectStorage: RemoteObjectStorage }) {
     super(options);
+    this.storage = options.remoteObjectStorage;
     this.hookConsole();
     this.listenError();
   }
@@ -28,6 +30,10 @@ export class RuntimeDomain extends BaseDomain {
     });
   }
 
+  dispose(): void {
+    this.isEnable = false;
+  }
+
   evaluate({ expression, generatePreview, throwOnSideEffect }: { expression: string, generatePreview?: boolean, throwOnSideEffect?: boolean }) {
 
     if (throwOnSideEffect && isSideEffectFree(expression) === false) {
@@ -41,7 +47,7 @@ export class RuntimeDomain extends BaseDomain {
       // eslint-disable-next-line no-eval
       const res = window.eval(expression);
       return {
-        result: serializer.serialize(res, generatePreview ?? true),
+        result: this.storage.serialize(res, generatePreview ?? true),
       };
     } catch (error) {
       return {
@@ -57,11 +63,11 @@ export class RuntimeDomain extends BaseDomain {
     objectId: string,
     ownProperties?: boolean
   }) {
-    return serializer.getProperties(params);
+    return this.storage.getProperties(params);
   }
 
   releaseObject(params: { objectId: string }) {
-    serializer.releaseObject(params.objectId)
+    this.storage.releaseObject(params.objectId)
   }
 
   // document.body.querySelector('.TruncateText_dcb41d92').innerHTML = 'Renou7777798987987897gvgvjhgvhjgvjhgvjhgvjhgvjhgvjgvjgvjhgvgjhgvjhvjhgv4567==='
@@ -73,23 +79,23 @@ export class RuntimeDomain extends BaseDomain {
     if (Array.isArray(args)) {
       args = args.map(v => {
         if ('value' in v) return v.value;
-        if ('objectId' in v) return serializer.getObjectById(v.objectId);
+        if ('objectId' in v) return this.storage.getObjectById(v.objectId);
         return undefined;
       });
     }
 
     if (silent === true) {
       try {
-        const result = fun.apply(objectId ? serializer.getObjectById(objectId) : null, args);
-        return { result: serializer.serialize(result) };
+        const result = fun.apply(objectId ? this.storage.getObjectById(objectId) : null, args);
+        return { result: this.storage.serialize(result) };
       } catch (error) {
         return {
-          result: serializer.serialize(error),
+          result: this.storage.serialize(error),
         }
       }
     } else {
-      const result = fun.apply(objectId ? serializer.getObjectById(objectId) : null, args);
-      return { result: serializer.serialize(result) };
+      const result = fun.apply(objectId ? this.storage.getObjectById(objectId) : null, args);
+      return { result: this.storage.serialize(result) };
     }
   }
 
@@ -148,7 +154,7 @@ export class RuntimeDomain extends BaseDomain {
           method: "Runtime.consoleAPICalled",
           params: {
             type: methods[key],
-            args: args.map(arg => serializer.serialize(arg, true)),
+            args: args.map(arg => this.storage.serialize(arg, true)),
             executionContextId: 1,
             timestamp: Date.now(),
             stackTrace: {

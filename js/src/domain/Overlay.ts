@@ -1,7 +1,7 @@
 // OverlayDomain.ts — non-overlapping rings, no ShadowRoot
 import BaseDomain, { type Options } from "./BaseDomain";
 import type { DOMDomain } from "./Dom";
-import DomStorage, { domStorage, IGNORE_ATTRIBUTE } from "./utils/DomStorage";
+import DomStorage, { IGNORE_ATTRIBUTE } from "./utils/DomStorage";
 
 
 type RGBA = { r: number; g: number; b: number; a?: number };
@@ -44,10 +44,10 @@ export class OverlayDomain extends BaseDomain {
   private onKey = (e: KeyboardEvent) => this.handleKey(e);
   private onScrollOrResize = () => this.redraw();
 
-  constructor(options: Options, dom: DOMDomain) {
+  constructor(options: Options & { dom: DOMDomain, domStorage: DomStorage }) {
     super({ sendCommand: options.sendCommand });
-    this.store = domStorage;
-    this.dom = dom;
+    this.store = options.domStorage;
+    this.dom = options.dom;
   }
 
   enable() {
@@ -65,6 +65,10 @@ export class OverlayDomain extends BaseDomain {
     this.destroyOverlay();
     this.enabled = false;
     return { result: {} };
+  }
+
+  dispose(): void {
+    this.disable();
   }
 
   setInspectMode(params: SetInspectModeParams) {

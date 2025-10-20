@@ -78,7 +78,7 @@ type GetPropertiesResult = {
   exceptionDetails?: ExceptionDetails;
 };
 
-export class RemoteObjectSerializer {
+export class RemoteObjectStorage {
   private nextId = 1;
   private ids = new WeakMap<object, string>();
   private store = new Map<string, any>();
@@ -91,6 +91,12 @@ export class RemoteObjectSerializer {
       maxStringLength: Math.max(16, options.maxStringLength ?? 10000),
       maxDescriptionLength: Math.max(40, options.maxDescriptionLength ?? 10000),
     };
+  }
+
+  dispose() {
+    this.ids = new WeakMap<object, string>();
+    this.store.clear();
+    this.nextId = 1;
   }
 
   serialize(value: any, generatePreview?: boolean): RemoteObject {
@@ -567,5 +573,3 @@ export class RemoteObjectSerializer {
     return s.slice(0, max);
   }
 }
-
-export const remoteObjectSerializer = new RemoteObjectSerializer();

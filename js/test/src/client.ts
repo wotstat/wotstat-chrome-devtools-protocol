@@ -6,14 +6,17 @@ function send(command: any) {
   ws.send(JSON.stringify(command));
 }
 
-const cdp = new ChromeDevtoolProtocol(send)
+let cdp: ChromeDevtoolProtocol | null = null;
 
 const ws = new WebSocket('ws://localhost:3000/devtools');
 ws.onopen = () => {
-  console.log('WebSocket connection established with devtools server');
-  ws.send('Hello from client');
+  cdp = new ChromeDevtoolProtocol(send);
 }
 ws.onmessage = (event) => {
   const message = JSON.parse(event.data);
-  cdp.onCommand(message);
-};
+  cdp?.onCommand(message);
+}
+ws.onclose = () => {
+  cdp?.dispose();
+  cdp = null;
+}

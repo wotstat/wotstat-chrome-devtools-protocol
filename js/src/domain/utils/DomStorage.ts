@@ -23,6 +23,12 @@ export default class DomStorage {
   private nodeById = new Map<number, Node>();
   private nextId = 1;
 
+  dispose() {
+    this.idByNode.clear();
+    this.nodeById.clear();
+    this.nextId = 1;
+  }
+
   getOrCreateNodeId(node: Node): number {
     const id = this.idByNode.get(node);
     if (id) return id;
@@ -187,5 +193,3 @@ export default class DomStorage {
     return this.idByNode.has(node);
   }
 }
-
-export const domStorage = new DomStorage();

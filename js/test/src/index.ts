@@ -15,7 +15,6 @@ serve({
   },
 
   fetch(req, server) {
-    console.log(`Received request: ${req.method} ${req.url}`);
     if (server.upgrade(req)) return;
     return new Response("Upgrade failed", { status: 500 });
   },
