@@ -160,4 +160,4 @@ class CDPServer(object):
     if self.serverThread is not None:
       self.serverThread.join()
     
-    logger.info("WebSocketDataProvider stopped")
+    logger.info("WebSocket stopped")
