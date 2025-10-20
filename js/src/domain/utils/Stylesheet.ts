@@ -74,6 +74,22 @@ export namespace CDP {
     rule: CSSRule;
     matchingSelectors: number[]; // indices into selectorList.selectors
   }
+
+  export interface CSSStyleSheetHeader {
+    styleSheetId: StyleSheetId;
+    frameId: string;
+    sourceURL: string;
+    hasSourceURL: boolean;
+    origin: StyleSheetOrigin;
+    title: string;
+    ownerNode?: number;
+    disabled: boolean;
+    isInline: boolean;
+    startLine: number;
+    startColumn: number;
+    endLine: number;
+    endColumn: number;
+  }
 }
 
 /* =========================
@@ -89,15 +105,17 @@ export interface StylesheetOptions {
    * CDP origin. Defaults to 'regular'.
    */
   origin?: CDP.StyleSheetOrigin;
+
+  node?: HTMLElement;
+
+  href?: string;
+
   /**
    * Provide a custom selector matcher. Useful in Node.
    * Should return true if `element` matches `selector`.
    */
   matchSelector?: (element: any, selector: string) => boolean;
-  /**
-   * When true, keep vendor-prefixed declarations (no filtering). Default: true.
-   */
-  keepVendor?: boolean;
+
 }
 
 type RuleRecord = {
@@ -142,33 +160,39 @@ function isVendorProp(name: string): boolean {
    ========================= */
 
 export default class Stylesheet {
-  readonly cssText: string;
   readonly origin: CDP.StyleSheetOrigin;
   readonly styleSheetId: CDP.StyleSheetId;
-  private readonly opt: Required<Pick<StylesheetOptions, 'keepVendor'>>;
-  private ast: csstree.CssNode;
+  readonly href?: string;
+  private ast: csstree.CssNode | null = null;
+  private cssText: string;
   private rules: RuleRecord[] = [];
+  private node?: HTMLElement;
+
+  readonly options: StylesheetOptions;
 
   constructor(cssText: string, options: StylesheetOptions = {}) {
     this.cssText = cssText;
     this.origin = options.origin ?? 'regular';
     this.styleSheetId = options.styleSheetId ?? hashString(cssText);
-    this.opt = { keepVendor: options.keepVendor ?? true };
+    this.href = options.href;
+    this.node = options.node;
+    this.options = options;
 
-    // Parse with locations so we can emit CDP ranges.
-    this.ast = csstree.parse(cssText, {
+    this.recalculate();
+  }
+
+  private recalculate() {
+    this.ast = csstree.parse(this.cssText, {
       positions: true,
       parseValue: true,
       parseRulePrelude: true,
       onParseError: (err) => {
-        // Keep going; mark declarations as parsedOk=false later if needed
-        // eslint-disable-next-line no-console
         console.warn('[Stylesheet] Parse warning:', err.message);
       },
     });
 
-    this.extractRules();
-    this._matchSelector = this.buildMatcher(options.matchSelector);
+    this.rules = this.extractRules();
+    this._matchSelector = this.buildMatcher(this.options.matchSelector);
   }
 
   /* ============ Public API ============ */
@@ -198,16 +222,112 @@ export default class Stylesheet {
     return out;
   }
 
-  /**
-   * Expose parsed rules (CDP CSSRule) without matching (useful for debugging/inspection).
-   */
   getAllRules(): CDP.CSSRule[] {
     return this.rules.map((r) => this.toCDPRule(r));
   }
 
+  getStyleSheetHeader(): CDP.CSSStyleSheetHeader {
+    return {
+      styleSheetId: this.styleSheetId,
+      frameId: '', // Not tracked here
+      sourceURL: this.href || document.location.href,
+      origin: this.origin,
+      title: '',
+      ownerNode: undefined,
+      disabled: false,
+      isInline: !!this.href,
+      hasSourceURL: !!this.href,
+      startLine: 0,
+      startColumn: 0,
+      endLine: 0,
+      endColumn: 0,
+    };
+  }
+
+  getStyleSheetText(): string {
+    return this.cssText;
+  }
+
+  updateStyleSheetText(newText: string, range: { startLine: number; startColumn: number; endLine: number; endColumn: number } | null) {
+    if (!this.node) return
+
+    newText = newText.trim()
+
+    let targetText = this.cssText;
+    if (range) {
+      const startOffset = this.offsetFromRange(range.startLine, range.startColumn);
+      const endOffset = this.offsetFromRange(range.endLine, range.endColumn);
+      targetText = targetText.slice(0, startOffset) + newText + targetText.slice(endOffset);
+    } else {
+      targetText = newText;
+    }
+
+    const newRange = range ? {
+      startLine: range.startLine,
+      startColumn: range.startColumn,
+      endLine: range.startLine + newText.split('\n').length - 1,
+      endColumn: newText.split('\n').length === 1
+        ? range.startColumn + newText.length
+        : newText.split('\n').slice(-1)[0].length,
+    } : { startLine: 0, startColumn: 0, endLine: 0, endColumn: newText.length };
+
+    this.cssText = targetText;
+
+    if (this.node.tagName.toLowerCase() === 'link') {
+      this.node.parentElement?.removeChild(this.node);
+      const styleEl = document.createElement('style');
+      styleEl.textContent = this.cssText;
+      this.node = styleEl;
+      document.head.appendChild(styleEl);
+    } else if (this.node.tagName.toLowerCase() === 'style') {
+      this.node.textContent = this.cssText;
+    }
+
+
+    const ast = csstree.parse(`root{${newText}}`, {
+      positions: true,
+      parseValue: true,
+      parseRulePrelude: true,
+      onParseError: (err) => {
+        console.warn('[Stylesheet] Parse warning:', err.message);
+      },
+    });
+
+    const rules = this.extractRules(ast);
+
+    const result = {
+      styles: [{
+        styleSheetId: this.styleSheetId,
+        cssText: newText,
+        range: newRange,
+        shorthandEntries: [],
+        cssProperties: rules[0].declarations.map(d => ({
+          name: d.name,
+          value: d.value,
+          text: d.text,
+          disabled: false,
+          important: d.important,
+          range: {
+            startLine: 0,
+            startColumn: 0,
+            endLine: 0,
+            endColumn: 0,
+          },
+        }))
+
+      }]
+    }
+
+
+    this.recalculate();
+
+    return result;
+  }
+
   /* ============ Internal parsing ============ */
 
-  private extractRules(): void {
+  private extractRules(ast = this.ast): RuleRecord[] {
+    const rules: RuleRecord[] = [];
     const mediaStack: string[] = [];
 
     const traverse = (node: csstree.CssNode | null) => {
@@ -253,8 +373,6 @@ export default class Stylesheet {
           block.children.forEach((child) => {
             if (child.type === 'Declaration') {
               const name = child.property;
-              if (!this.opt.keepVendor && isVendorProp(name)) return;
-
               const valueText = child.value ? csstree.generate(child.value) : '';
               const textRaw = csstree.generate(child);
 
@@ -271,7 +389,7 @@ export default class Stylesheet {
 
           const ruleRange = toRange(node.loc);
 
-          this.rules.push({
+          rules.push({
             selectorTexts,
             selectorRanges,
             selectorTextAll,
@@ -291,7 +409,9 @@ export default class Stylesheet {
       }
     };
 
-    traverse(this.ast);
+    traverse(ast);
+
+    return rules
   }
 
   private toCDPRule(r: RuleRecord): CDP.CSSRule {
@@ -300,15 +420,24 @@ export default class Stylesheet {
       selectors: r.selectorTexts.map((t, i) => ({ text: t, range: r.selectorRanges[i] })),
     };
 
+    const firstRuleOffset = r.declarations[0]?.range;
+    const lastRuleOffset = r.declarations[r.declarations.length - 1]?.range;
+
+    const range = {
+      startLine: firstRuleOffset?.startLine ?? 0,
+      startColumn: firstRuleOffset?.startColumn ?? 0,
+      endLine: lastRuleOffset?.endLine ?? 0,
+      endColumn: lastRuleOffset?.endColumn ?? 0,
+    }
+
     const style: CDP.CSSStyle = {
       cssProperties: r.declarations,
       shorthandEntries: [], // Not expanded here; could be added with a shorthand expander if needed
       styleSheetId: this.styleSheetId,
-      range: r.ruleRange,
+      range: range,
       cssText: this.cssText.slice(
-        r.ruleRange ? this.offsetFromRange(r.ruleRange.startLine, r.ruleRange.startColumn) : 0,
-        r.ruleRange ? this.offsetFromRange(r.ruleRange.endLine, r.ruleRange.endColumn) : this.cssText.length
-      ),
+        this.offsetFromRange(range.startLine, range.startColumn),
+        this.offsetFromRange(range.endLine, range.endColumn)),
     };
 
     const media: CDP.Media[] | undefined =
@@ -342,7 +471,7 @@ export default class Stylesheet {
 
   /* ============ Matching ============ */
 
-  private _matchSelector: (el: any, selector: string) => boolean;
+  private _matchSelector: (el: any, selector: string) => boolean = () => false;
 
   private buildMatcher(custom?: (el: any, sel: string) => boolean) {
     if (custom) return custom;

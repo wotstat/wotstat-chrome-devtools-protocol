@@ -80,7 +80,19 @@ export class CSSDomain extends BaseDomain {
   }
 
   private async parseCSSStyles() {
+    const matchSelector = (element: Element, selector: string): boolean => {
+      try {
+        if (selector.match(/^\d*%$/)) return false;
+        if (selector.trim().length === 0) return false;
+        if (selector == '{' || selector == '}') return false;
+        return element.matches(selector);
+      } catch {
+        return false;
+      }
+    }
+
     const links = [...document.querySelectorAll('link[rel=stylesheet]')];
+
     for (const link of links) {
       const href = link.getAttribute('href');
       if (!href) continue;
@@ -90,20 +102,26 @@ export class CSSDomain extends BaseDomain {
 
         const stylesheet = new Stylesheet(cssText, {
           origin: 'regular',
-          matchSelector: (element, selector) => {
-            try {
-              if (selector.match(/^\d*%$/)) return false;
-              if (selector.trim().length === 0) return false;
-              if (selector == '{' || selector == '}') return false;
-              return element.matches(selector);
-            } catch {
-              return false;
-            }
-          }
+          href: href,
+          node: link as HTMLElement,
+          matchSelector
         });
         this.stylesheets.push(stylesheet);
+        this.send({ method: 'CSS.styleSheetAdded', params: { header: stylesheet.getStyleSheetHeader() } });
 
       } catch { }
+    }
+
+    const styles = [...document.querySelectorAll('style')];
+    for (const style of styles) {
+      const cssText = style.textContent || '';
+      const stylesheet = new Stylesheet(cssText, {
+        origin: 'regular',
+        node: style as HTMLElement,
+        matchSelector
+      });
+      this.stylesheets.push(stylesheet);
+      this.send({ method: 'CSS.styleSheetAdded', params: { header: stylesheet.getStyleSheetHeader() } });
     }
   }
 
@@ -160,6 +178,28 @@ export class CSSDomain extends BaseDomain {
     };
   }
 
+  getStyleSheetText(params: { styleSheetId: string }): { text: string } {
+    const sheetId = params.styleSheetId;
+    if (sheetId.startsWith("inline::")) {
+      const nodeId = stylesheetStorage.getNodeIdForInlineStyleId(sheetId);
+      const node = domStorage.getNodeById(nodeId);
+      if (node && domStorage.isElement(node)) {
+        const style = node.getAttribute("style") || '';
+        const disabledStyle = node.getAttribute("_style") || '';
+        return { text: style + disabledStyle };
+      }
+      return { text: '' };
+    }
+
+    for (const stylesheet of this.stylesheets) {
+      if (stylesheet.styleSheetId === sheetId) {
+        return { text: stylesheet.getStyleSheetText() };
+      }
+    }
+
+    return { text: '' };
+  }
+
   setStyleTexts(params: SetStyleTextEditParams): SetStyleTextsResult {
 
     const styles: CSSStyle[] = [];
@@ -169,11 +209,28 @@ export class CSSDomain extends BaseDomain {
         const nodeId = stylesheetStorage.getNodeIdForInlineStyleId(edit.styleSheetId);
         const node = domStorage.getNodeById(nodeId);
         if (node && domStorage.isElement(node)) {
-          node.setAttribute("style", edit.text);
           const style = this.serializeStyle(edit.text, edit.styleSheetId);
+
+          const enabledStyles = style.cssProperties.filter(p => !p.disabled).map(p => p.text).join('');
+          const disabledStyles = style.cssProperties.filter(p => p.disabled).map(p => p.text).join('');
+          if (enabledStyles) node.setAttribute("style", enabledStyles);
+          else node.removeAttribute("style");
+
+          if (disabledStyles) node.setAttribute("_style", disabledStyles);
+          else node.removeAttribute("_style");
+
           styles.push(style);
         }
         continue;
+      } else {
+        for (const stylesheet of this.stylesheets) {
+          if (stylesheet.styleSheetId === edit.styleSheetId) {
+            const result = stylesheet.updateStyleSheetText(edit.text, edit.range ?? null);
+            // not working and i don't know why. Duplicate modified properties.
+            // if (result) styles.push(...result.styles);
+            break;
+          }
+        }
       }
     }
 
@@ -195,9 +252,10 @@ export class CSSDomain extends BaseDomain {
   }
 
   private inlineStyleForElement(element: Element): CSSStyle | undefined {
-    const style = element.getAttribute("style");
+    const style = element.getAttribute("style") || '';
+    const disabledStyle = element.getAttribute("_style") || '';
     const id = stylesheetStorage.getOrCreateInlineStyleIdForNodeId(domStorage.getOrCreateNodeId(element));
-    return this.serializeStyle(style || '', id);
+    return this.serializeStyle(style + disabledStyle, id);
   }
 
   private serializeStyle(styleText: string, styleSheetId?: string): CSSStyle {
@@ -205,7 +263,7 @@ export class CSSDomain extends BaseDomain {
 
     const text = styleText;
     if (text) {
-      const parts = text.match(/\/\*.*?\*\/|[^;]+;/g);
+      const parts = text.match(/\s*\/\*[\s\S]*?\*\/|[^;]+;/g);
       if (!parts) {
         return {
           styleSheetId,
@@ -216,25 +274,27 @@ export class CSSDomain extends BaseDomain {
         };
       }
 
-      let letterIndex = 0
+      let letterIndex = 0;
 
       for (const part of parts) {
         letterIndex += part.length;
 
-        const commented = part.trim().startsWith("/*");
-        const clean = commented ? part.replace(/^\/\*|\*\/$/g, "").trim() : part.trim();
-        const match = clean.match(/^([\w-]+)\s*:\s*(.*?)\s*(?:!important)?;?$/i);
+        const commented = /^\s*\/\*/.test(part);
+        const clean = commented
+          ? part.replace(/^\s*\/\*|\*\/\s*$/g, '').trim()
+          : part.trim();
 
-        if (!match) continue
+        const match = clean.match(/^([\w-]+)\s*:\s*(.*?)\s*(?:!important)?;?$/i);
+        if (!match) continue;
 
         const name = match[1];
         const value = match[2].replace(/\s*!important\s*$/i, "");
-        const important = /\!important/i.test(clean);
+        const important = /\s*!important\s*$/i.test(clean);
 
         cssProperties.push({
-          name: name,
-          value: value,
-          important: important,
+          name,
+          value,
+          important,
           disabled: commented,
           text: commented ? `/* ${name}: ${value}; */` : `${name}: ${value};`,
           range: { startLine: 0, startColumn: letterIndex - part.length, endLine: 0, endColumn: letterIndex }

@@ -306,9 +306,7 @@ export class DOMDomain extends BaseDomain {
     const value = el.getAttribute(name);
 
     if (!this.attributeChangeBuffer.has(nodeId)) this.attributeChangeBuffer.set(nodeId, new Map());
-    const nodeChanges = this.attributeChangeBuffer.get(nodeId)!;
-    if (el.hasAttribute(name)) nodeChanges.set(name, { value });
-    else nodeChanges.set(name, { value: null });
+    this.attributeChangeBuffer.get(nodeId)!.set(name, { value })
 
     if (!this.isThrottled) {
       this.isThrottled = true;

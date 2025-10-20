@@ -160,10 +160,7 @@ export default class DomStorage {
   }
 
   private attributesForElement(el: Element): string[] {
-    const names = el.getAttributeNames() ?? Array.from(el.attributes).map(a => a.name);
-    const out: string[] = [];
-    for (const name of names) out.push(name, el.getAttribute(name) ?? "");
-    return out;
+    return Array.from(el.attributes).flatMap(a => [a.name, a.value]);
   }
 
   isElement(n: Node): n is Element {
