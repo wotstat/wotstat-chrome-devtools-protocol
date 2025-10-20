@@ -86,8 +86,10 @@ export default class DomStorage {
     const nextDepth = depth === -1 ? -1 : depth - 1;
     const children: ProtocolNode[] = [];
 
-    for (const child of node.childNodes)
+    for (const child of node.childNodes) {
+      if (!this.isSerializableNode(child)) continue;
       children.push(this.serializeNode(child, { depth: nextDepth, pierce }));
+    }
 
     if (pierce && this.isElement(node) && node.shadowRoot)
       children.push(this.serializeShadowRoot(node.shadowRoot, nextDepth, pierce));
@@ -115,7 +117,9 @@ export default class DomStorage {
         nodeName: el.tagName,
         localName: el.localName.toLowerCase() ?? el.tagName.toLowerCase(),
         nodeValue: "",
-        attributes: [...this.attributesForElement(el), 'wotstat-cdp-node-id', nodeId.toString()],
+        attributes: this.attributesForElement(el),
+        // Uncomment the line below to include node IDs in attributes
+        // attributes: [...this.attributesForElement(el), 'wotstat-cdp-node-id', nodeId.toString()],
       };
     }
     if (t === Node.TEXT_NODE) return { ...base, nodeName: "#text", nodeValue: node.nodeValue ?? "" };
@@ -161,6 +165,13 @@ export default class DomStorage {
 
   private attributesForElement(el: Element): string[] {
     return Array.from(el.attributes).flatMap(a => [a.name, a.value]);
+  }
+
+  isSerializableNode(node: Node): boolean {
+    if (this.isIgnored(node)) return false;
+    if (node.nodeType == Node.TEXT_NODE && node.nodeValue?.match(/^\s*$/g)) return false;
+
+    return true;
   }
 
   isElement(n: Node): n is Element {

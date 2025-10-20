@@ -342,10 +342,11 @@ export class OverlayDomain extends BaseDomain {
   private defaults(): Required<Pick<HighlightConfig, "marginColor" | "borderColor" | "paddingColor" | "contentColor">> & HighlightConfig {
     return {
       showInfo: true,
-      marginColor: { r: 255, g: 155, b: 0, a: 0.3 },
-      borderColor: { r: 255, g: 200, b: 50, a: 0.3 },
-      paddingColor: { r: 77, g: 200, b: 0, a: 0.3 },
-      contentColor: { r: 120, g: 170, b: 210, a: 0.3 },
+
+      marginColor: { r: 255, g: 155, b: 0, a: 0 },
+      borderColor: { r: 255, g: 200, b: 50, a: 0 },
+      paddingColor: { r: 77, g: 200, b: 0, a: 0 },
+      contentColor: { r: 120, g: 170, b: 210, a: 0 },
     };
   }
 

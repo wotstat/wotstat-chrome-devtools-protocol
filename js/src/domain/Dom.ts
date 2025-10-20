@@ -256,9 +256,13 @@ export class DOMDomain extends BaseDomain {
     const parentNodeId = this.store.getOrCreateNodeId(parent);
 
     for (const added of Array.from(rec.addedNodes)) {
-      if (this.store.isIgnored(added)) continue;
+      if (!this.store.isSerializableNode(added)) continue;
 
-      const previousSibling = (added as any).previousSibling as Node | null;
+      let previousSibling = added.previousSibling;
+
+      while (previousSibling && !this.store.isSerializableNode(previousSibling))
+        previousSibling = previousSibling.previousSibling;
+
       const previousNodeId = previousSibling ? this.store.getOrCreateNodeId(previousSibling) : 0;
 
       const nodePayload = this.store.serializeNode(added, { depth: 1, pierce: false });
