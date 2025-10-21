@@ -1,6 +1,6 @@
 # [POC] Chrome Devtools Protocol (CDP) implementation for World of Tanks Gameface
 
-![hero](./.github/hero.webm)
+![](https://github.com/user-attachments/assets/785d0b52-c704-4458-8afa-c7c7295a791a)
 
 > **POC – Proof of Concept may not work perfectly and can contain bugs.**
 
