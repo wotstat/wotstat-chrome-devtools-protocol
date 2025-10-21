@@ -2,17 +2,17 @@
 
 import json
 import BigWorld
-from gui import InputHandler
-from .Logger import Logger
+import Queue
 from frameworks.wulf import ViewModel
 from gui.impl.pub.view_component import ViewComponent
 from openwg_gameface import ModDynAccessor, gf_mod_inject
-import Queue
+
+from .Logger import Logger
 
 import typing
 if typing.TYPE_CHECKING:
   from .CDPServer import CDPServer
-
+  
 WOTSTAT_CHROME_DEVTOOLS_PROTOCOL_VIEW = 'WOTSTAT_CHROME_DEVTOOLS_PROTOCOL_VIEW'
 
 logger = Logger.instance()

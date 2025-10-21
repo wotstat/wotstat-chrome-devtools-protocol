@@ -10,7 +10,7 @@ if typing.TYPE_CHECKING:
   from .CDPView import CDPView
 
 logger = Logger.instance()
-clients = {}  # type: dict[str, WebSocket]
+clients = {} # type: dict[str, WebSocket]
 instance = None # type: CDPServer
 
 class WSClient(WebSocket):
@@ -33,7 +33,7 @@ class WSClient(WebSocket):
         port = self.server.port
         
         tabs = instance.views.values()
-        sortedTabs = sorted(tabs, key=lambda v: ('Presenter' in v.pageName, v.pageName))
+        sortedTabs = sorted(tabs, key=lambda v: v.pageName)
         
         for view in sortedTabs:
           items.append('''
