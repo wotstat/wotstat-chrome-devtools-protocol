@@ -8,7 +8,7 @@
 
 ## Использование
 1. Установите [wot.gameface](https://gitlab.com/openwg/wot.gameface)
-2. Установите wotstat.chrome-devtools-protocol из релизов
+2. Установите [wotstat.chrome-devtools-protocol](https://github.com/wotstat/wotstat-chrome-devtools-protocol/releases/latest) из релизов
 3. Запустите игру
 4. Откройте в хроме `chrome://inspect`
 5. Нажмите на "Configure..." и добавьте `localhost:9222` если его там нет

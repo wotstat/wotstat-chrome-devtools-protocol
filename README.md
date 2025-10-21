@@ -8,7 +8,7 @@ This project implements support for the Chrome Devtools Protocol (CDP) for the G
 
 ## Usage
 1. Install [wot.gameface](https://gitlab.com/openwg/wot.gameface)
-2. Install `wotstat.chrome-devtools-protocol` from the releases
+2. Install [wotstat.chrome-devtools-protocol](https://github.com/wotstat/wotstat-chrome-devtools-protocol/releases/latest) from the releases
 3. Launch the game
 4. Open `chrome://inspect` in Chrome
 5. Click `Configure...` and add `localhost:9222` if it’s not there
