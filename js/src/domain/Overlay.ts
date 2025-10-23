@@ -203,9 +203,9 @@ export class OverlayDomain extends BaseDomain {
     Object.assign(label.style, {
       position: "fixed",
       pointerEvents: "none",
-      font: '12px/1.4 system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif',
-      padding: "4px 6px",
-      borderRadius: "4px",
+      font: '12rem/1.4 system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif',
+      padding: "4rem 6rem",
+      borderRadius: "4rem",
       background: "rgba(0,0,0,0.75)",
       color: "white",
       whiteSpace: "nowrap",
@@ -226,7 +226,7 @@ export class OverlayDomain extends BaseDomain {
 
   private destroyOverlay() {
     if (!this.root) return;
-    this.root.remove();
+    this.root.parentElement?.removeChild(this.root);
     this.root = undefined;
     this.layers = undefined;
   }

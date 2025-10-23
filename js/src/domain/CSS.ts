@@ -1,3 +1,4 @@
+import { fetch } from "../utils/fetch";
 import BaseDomain, { type Options } from "./BaseDomain";
 import type DomStorage from "./utils/DomStorage";
 import Stylesheet from "./utils/Stylesheet";
@@ -106,8 +107,9 @@ export class CSSDomain extends BaseDomain {
       const href = link.getAttribute('href');
       if (!href) continue;
       try {
-        const response = await fetch(href);
-        const cssText = await response.text();
+
+        const { status, data: cssText } = await fetch(href);
+        if (status !== 200 || typeof cssText !== 'string') continue;
 
         const stylesheet = new Stylesheet(cssText, {
           origin: 'regular',

@@ -4,7 +4,9 @@ import json
 import BigWorld
 import Queue
 from frameworks.wulf import ViewModel
-from gui.impl.pub.view_component import ViewComponent
+from gui.impl.pub import ViewImpl
+from frameworks.wulf import WindowFlags, WindowLayer, ViewSettings, ViewFlags
+# from gui.impl.pub.view_component import ViewComponent
 from openwg_gameface import ModDynAccessor, gf_mod_inject
 
 from .Logger import Logger
@@ -95,17 +97,15 @@ class CDPModel(ViewModel):
   def __setRequest(self, value):
     # type: (str) -> None
     self._setString(0, value)
-    
-class CDPView(ViewComponent[CDPModel]):
+
+
+class CDPView(ViewImpl):
   
   viewLayoutID = ModDynAccessor(WOTSTAT_CHROME_DEVTOOLS_PROTOCOL_VIEW)
   
   def __init__(self, server, pageName='', pageId=''):
-    # type: (CDPServer, str, str) -> None
-    super(CDPView, self).__init__(
-      layoutID=CDPView.viewLayoutID(),
-      model=CDPModel
-    )
+    settings = ViewSettings(CDPView.viewLayoutID(), flags=ViewFlags.VIEW, model=CDPModel())
+    super(CDPView, self).__init__(settings)
     
     self.viewModel.sendCommand += self.onSendCommand
     
@@ -138,6 +138,7 @@ class CDPView(ViewComponent[CDPModel]):
   def connectionClosed(self):
     while not self.commandQueue.empty():
       self.commandQueue.get()
+      
     self.viewModel.clearRequests()
     self.viewModel.sendRequest('DISCONNECT')
     
