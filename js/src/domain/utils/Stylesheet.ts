@@ -273,16 +273,11 @@ export default class Stylesheet {
 
     this.cssText = targetText;
 
-    if (this.node.tagName.toLowerCase() === 'link') {
-      this.node.parentElement?.removeChild(this.node);
-      const styleEl = document.createElement('style');
-      styleEl.textContent = this.cssText;
-      this.node = styleEl;
-      document.head.appendChild(styleEl);
-    } else if (this.node.tagName.toLowerCase() === 'style') {
-      this.node.textContent = this.cssText;
-    }
-
+    this.node.parentElement?.removeChild(this.node);
+    const styleEl = document.createElement('style');
+    styleEl.textContent = this.cssText;
+    this.node = styleEl;
+    document.head.appendChild(styleEl);
 
     const ast = csstree.parse(`root{${newText}}`, {
       positions: true,

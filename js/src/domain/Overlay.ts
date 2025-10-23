@@ -213,6 +213,13 @@ export class OverlayDomain extends BaseDomain {
       display: "none",
     } as CSSStyleDeclaration);
 
+    if (!window.engine) Object.assign(label.style, {
+      font: '12px/1.4 system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif',
+      padding: "4px 6px",
+      borderRadius: "4px",
+    } as CSSStyleDeclaration);
+
+
     // Append in z-order: margin (lowest) → border → padding → content → label
     for (const seg of Object.values(margin)) root.appendChild(seg);
     for (const seg of Object.values(border)) root.appendChild(seg);
