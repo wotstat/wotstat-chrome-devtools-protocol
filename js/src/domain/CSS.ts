@@ -101,34 +101,22 @@ export class CSSDomain extends BaseDomain {
       }
     }
 
-    const links = [...document.querySelectorAll('link[rel=stylesheet]')];
+    const links = [...document.querySelectorAll('link[rel=stylesheet], style')];
 
     for (const link of links) {
-      const href = link.getAttribute('href');
-      if (!href) continue;
-      try {
+      let cssText = '';
+      if (link.getAttribute('href')) {
+        const { status, data } = await fetch(link.getAttribute('href')!);
+        if (status !== 200 || typeof data !== 'string') continue;
+        cssText = data;
+      } else {
+        cssText = link.textContent || '';
+      }
 
-        const { status, data: cssText } = await fetch(href);
-        if (status !== 200 || typeof cssText !== 'string') continue;
-
-        const stylesheet = new Stylesheet(cssText, {
-          origin: 'regular',
-          href: href,
-          node: link as HTMLElement,
-          matchSelector
-        });
-        this.stylesheets.push(stylesheet);
-        this.send({ method: 'CSS.styleSheetAdded', params: { header: stylesheet.getStyleSheetHeader() } });
-
-      } catch { }
-    }
-
-    const styles = [...document.querySelectorAll('style')];
-    for (const style of styles) {
-      const cssText = style.textContent || '';
       const stylesheet = new Stylesheet(cssText, {
+        href: link.getAttribute('href') || undefined,
         origin: 'regular',
-        node: style as HTMLElement,
+        node: link as HTMLElement,
         matchSelector
       });
       this.stylesheets.push(stylesheet);
@@ -239,7 +227,7 @@ export class CSSDomain extends BaseDomain {
           if (stylesheet.styleSheetId === edit.styleSheetId) {
             const result = stylesheet.updateStyleSheetText(edit.text, edit.range ?? null);
             // not working and i don't know why. Duplicate modified properties.
-            // if (result) styles.push(...result.styles);
+            if (result) styles.push(...result.styles);
             break;
           }
         }

@@ -278,8 +278,7 @@ export default class Stylesheet {
     styleEl.textContent = this.cssText;
     this.node = styleEl;
     document.head.appendChild(styleEl);
-
-    const ast = csstree.parse(`root{${newText}}`, {
+    const ast = csstree.parse(`root{\n  ${newText}}`, {
       positions: true,
       parseValue: true,
       parseRulePrelude: true,
@@ -296,23 +295,23 @@ export default class Stylesheet {
         cssText: newText,
         range: newRange,
         shorthandEntries: [],
-        cssProperties: rules[0].declarations.map(d => ({
-          name: d.name,
-          value: d.value,
-          text: d.text,
-          disabled: false,
-          important: d.important,
-          range: {
-            startLine: 0,
-            startColumn: 0,
-            endLine: 0,
-            endColumn: 0,
-          },
-        }))
+        cssProperties: rules[0].declarations
+          .map(d => ({
+            name: d.name,
+            value: d.value,
+            text: d.text,
+            disabled: false,
+            important: d.important,
+            range: {
+              startLine: -1 + newRange.startLine + (d.range?.startLine || 0),
+              startColumn: d.range?.startColumn || 0,
+              endLine: -1 + newRange.startLine + (d.range?.endLine || 0),
+              endColumn: d.range?.endColumn || 0,
+            },
+          }))
 
       }]
     }
-
 
     this.recalculate();
 
