@@ -164,7 +164,7 @@ export class CSSDomain extends BaseDomain {
 
     const inherited: Array<{ inlineStyle?: CSSStyle; matchedCSSRules?: CSSRuleMatch[] }> = [];
     let p = node.parentElement;
-    while (p && p.parentElement) {
+    while (p) {
       inherited.push({ inlineStyle: this.inlineStyleForElement(p), matchedCSSRules: this.collectMatchingRules(p) });
       p = p.parentElement;
     }
@@ -199,6 +199,18 @@ export class CSSDomain extends BaseDomain {
 
     return { text: '' };
   }
+
+  setStyleSheetText(params: { styleSheetId: string; text: string }) {
+    const sheetId = params.styleSheetId;
+    if (sheetId.startsWith("inline::")) return
+
+    for (const stylesheet of this.stylesheets) {
+      if (stylesheet.styleSheetId !== sheetId) continue;
+      stylesheet.setStyleSheetText(params.text);
+      return
+    }
+  }
+
 
   setStyleTexts(params: SetStyleTextEditParams): SetStyleTextsResult {
 

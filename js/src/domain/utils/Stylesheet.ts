@@ -203,7 +203,6 @@ export default class Stylesheet {
    */
   getMatchingRulesForElement(element: any): CDP.RuleMatch[] {
     const out: CDP.RuleMatch[] = [];
-
     for (const r of this.rules) {
       const matchingSelectors: number[] = [];
       for (let i = 0; i < r.selectorTexts.length; i++) {
@@ -271,13 +270,8 @@ export default class Stylesheet {
         : newText.split('\n').slice(-1)[0].length,
     } : { startLine: 0, startColumn: 0, endLine: 0, endColumn: newText.length };
 
-    this.cssText = targetText;
+    this.setStyleSheetText(targetText);
 
-    this.node.parentElement?.removeChild(this.node);
-    const styleEl = document.createElement('style');
-    styleEl.textContent = this.cssText;
-    this.node = styleEl;
-    document.head.appendChild(styleEl);
     const ast = csstree.parse(`root{\n  ${newText}}`, {
       positions: true,
       parseValue: true,
@@ -313,9 +307,19 @@ export default class Stylesheet {
       }]
     }
 
-    this.recalculate();
-
     return result;
+  }
+
+  setStyleSheetText(newText: string) {
+    if (!this.node) return
+    this.cssText = newText;
+    this.node.parentElement?.removeChild(this.node);
+    const styleEl = document.createElement('style');
+    styleEl.textContent = this.cssText;
+    this.node = styleEl;
+    document.head.appendChild(styleEl);
+
+    this.recalculate();
   }
 
   /* ============ Internal parsing ============ */

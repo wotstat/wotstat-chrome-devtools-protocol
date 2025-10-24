@@ -17,3 +17,8 @@
   content: "★ ";
   color: #ffcc00;
 }
+
+:root {
+  --main-bg-color: #282c34;
+  --accent-color: #61dafb;
+}
