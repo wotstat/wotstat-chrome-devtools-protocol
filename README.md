@@ -33,9 +33,10 @@ Only minimal CDP functionality for working with DOM, CSS, and Runtime is impleme
   - Show proper overlays when hovering styles
   - Element picker for selecting an element on the page (click directly in the game)
 - CSS:
-  - View and **edit** inline element styles
+  - View and **edit** element styles
   - View element style hierarchy (see which styles apply and from where)
   - View computed styles
+  - Edit `custom.css` style via the Sources tab
 - Runtime:
   - Execute JS code in the page context
   - View objects and their properties
@@ -47,11 +48,11 @@ Only minimal CDP functionality for working with DOM, CSS, and Runtime is impleme
   - `setInnerHTML` doesn’t work properly — theoretically it should, but something breaks in Gameface
   - `appendChild` works only for new elements; when moving existing ones, they don’t appear in the tree — you must restart Devtools
 - CSS:
-  - Only `inline` styles can be modified; styles from `css` files might be editable via creating `<style>` elements, but Gameface doesn’t pick them up
   - Inline styles can be disabled, but Gameface removes `/* style */` definitions, so disabled styles are moved into the `_style` attribute
   - Pseudo-elements `::before` and `::after` are not supported
   - State overrides (`:hover`, `:active`, `:focus`, etc.) are not supported
   - Gameface expands shorthand properties into full ones — to see changes in Devtools, toggle the selected element in the tree
+  - Editing `custom.css` can only set values; if you delete a line, Gameface still caches the style. For example, if you set the color to `red` and then delete that line, the color remains `red`.
 - Runtime:
   - `const` and `let` are not supported; use simple declarations like `foo = 123`
   - Code suggestions work partially, since side-effect-free properties can’t always be determined
