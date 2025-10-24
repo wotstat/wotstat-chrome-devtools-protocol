@@ -8,6 +8,7 @@
 
 ## Использование
 1. Установите [wot.gameface](https://gitlab.com/openwg/wot.gameface)
+   - Для `Lesta` скачайте `wot.gameface` из релизов этого репозитория (пропатченная версия под Lesta)
 2. Установите [wotstat.chrome-devtools-protocol](https://github.com/wotstat/wotstat-chrome-devtools-protocol/releases/latest) из релизов
 3. Запустите игру
 4. Откройте в хроме `chrome://inspect`

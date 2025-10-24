@@ -7,7 +7,8 @@
 This project implements support for the Chrome Devtools Protocol (CDP) for the Gameface part of the World of Tanks game, allowing the use of Chrome Devtools to inspect and debug the game’s and mods’ UI.
 
 ## Usage
-1. Install [wot.gameface](https://gitlab.com/openwg/wot.gameface)
+1. Install [wot.gameface](https://gitlab.com/openwg/wot.gameface).
+   - For `Lesta` download `wot.gameface` from the releases of this repository (patched version for Lesta)
 2. Install [wotstat.chrome-devtools-protocol](https://github.com/wotstat/wotstat-chrome-devtools-protocol/releases/latest) from the releases
 3. Launch the game
 4. Open `chrome://inspect` in Chrome
