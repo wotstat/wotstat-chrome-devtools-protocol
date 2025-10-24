@@ -228,8 +228,8 @@ export default class Stylesheet {
   getStyleSheetHeader(): CDP.CSSStyleSheetHeader {
     return {
       styleSheetId: this.styleSheetId,
-      frameId: '', // Not tracked here
-      sourceURL: this.href || document.location.href,
+      frameId: '',
+      sourceURL: this.href || window.location.href,
       origin: this.origin,
       title: '',
       ownerNode: undefined,
@@ -311,6 +311,11 @@ export default class Stylesheet {
   }
 
   setStyleSheetText(newText: string) {
+
+    let hasError = false;
+    csstree.parse(newText, { onParseError: (err) => hasError = true });
+
+    if (hasError) return
     if (!this.node) return
     this.cssText = newText;
     this.node.parentElement?.removeChild(this.node);

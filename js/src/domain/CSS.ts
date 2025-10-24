@@ -105,18 +105,37 @@ export class CSSDomain extends BaseDomain {
 
     for (const link of links) {
       let cssText = '';
-      if (link.getAttribute('href')) {
-        const { status, data } = await fetch(link.getAttribute('href')!);
+      const href = link.getAttribute('href');
+      if (href) {
+        const { status, data } = await fetch(href);
         if (status !== 200 || typeof data !== 'string') continue;
         cssText = data;
       } else {
         cssText = link.textContent || '';
       }
 
+      const resolvedHref = href ? new URL(href, window.location.href).href : undefined;
+
       const stylesheet = new Stylesheet(cssText, {
-        href: link.getAttribute('href') || undefined,
+        href: resolvedHref,
         origin: 'regular',
         node: link as HTMLElement,
+        matchSelector
+      });
+      this.stylesheets.push(stylesheet);
+      this.send({ method: 'CSS.styleSheetAdded', params: { header: stylesheet.getStyleSheetHeader() } });
+    }
+
+    if (!document.querySelector('style[wotstat-cdp-custom-style]')) {
+      const style = document.createElement('style');
+      style.setAttribute('wotstat-cdp-custom-style', 'true');
+      style.textContent = `/* You can write here any overrides for the styles */`;
+      document.head.appendChild(style);
+
+      const stylesheet = new Stylesheet(style.textContent, {
+        href: 'wotstat-cdp://overrides/style.css',
+        origin: 'regular',
+        node: style,
         matchSelector
       });
       this.stylesheets.push(stylesheet);
