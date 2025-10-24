@@ -1,4 +1,5 @@
 import { fetch } from "../utils/fetch";
+import { resolveUrl } from "../utils/resolveUrl";
 import BaseDomain, { type Options } from "./BaseDomain";
 import type DomStorage from "./utils/DomStorage";
 import Stylesheet from "./utils/Stylesheet";
@@ -114,7 +115,7 @@ export class CSSDomain extends BaseDomain {
         cssText = link.textContent || '';
       }
 
-      const resolvedHref = href ? new URL(href, window.location.href).href : undefined;
+      const resolvedHref = href ? resolveUrl(href, window.location.href) : undefined;
 
       const stylesheet = new Stylesheet(cssText, {
         href: resolvedHref,
@@ -283,9 +284,11 @@ export class CSSDomain extends BaseDomain {
   }
 
   private inlineStyleForElement(element: Element): CSSStyle | undefined {
+    const id = stylesheetStorage.getOrCreateInlineStyleIdForNodeId(this.domStorage.getOrCreateNodeId(element));
+
+    if (!element.getAttribute) return this.serializeStyle('', id)
     const style = element.getAttribute("style") || '';
     const disabledStyle = element.getAttribute("_style") || '';
-    const id = stylesheetStorage.getOrCreateInlineStyleIdForNodeId(this.domStorage.getOrCreateNodeId(element));
     return this.serializeStyle(style + disabledStyle, id);
   }
 
